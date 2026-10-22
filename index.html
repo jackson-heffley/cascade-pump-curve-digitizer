@@ -1,0 +1,2368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cascade Pump Curve Digitizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #eef2f5;
+  --surface: #ffffff;
+  --ink: #15222d;
+  --ink-2: #4a5b68;
+  --ink-3: #74848f;
+  --rule: #cdd7de;
+  --rule-2: #e1e8ed;
+  --brand: #12506e;
+  --brand-2: #0d3b52;
+  --brand-wash: #e3eff5;
+  --cal: #00a6c8;
+  --head: #c2185b;
+  --eff: #2e7d32;
+  --ok: #1f7a4d;
+  --warn: #8a5300;
+  --warn-wash: #fff3d6;
+  --fail: #b3261e;
+  --fail-wash: #fde8e6;
+  --radius: 6px;
+  --font: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* header */
+.top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; background: var(--brand-2); color: #fff;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: 0.01em; }
+.brand svg { display: block; }
+.top .btn { background: transparent; color: #fff; border-color: rgba(255,255,255,.45); }
+.top .btn:hover { background: rgba(255,255,255,.12); }
+
+/* layout: the chart and the steps scroll separately, so the chart stays in view while a step is used */
+.bench { display: grid; grid-template-columns: minmax(0, 1fr) 400px; height: calc(100vh - 52px); min-height: 0; }
+.stage { padding: 18px 20px 40px; min-width: 0; position: relative; overflow-y: auto; }
+.rail { background: var(--surface); border-left: 1px solid var(--rule); padding: 8px 0 40px; overflow-y: auto; }
+@media (max-width: 980px) {
+  .bench { grid-template-columns: 1fr; height: auto; }
+  .stage, .rail { overflow: visible; }
+  .rail { border-left: 0; border-top: 1px solid var(--rule); }
+}
+
+/* drop zone */
+.drop {
+  border: 2px dashed var(--rule); border-radius: 10px; background: var(--surface);
+  min-height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 40px 24px; color: var(--ink-2);
+}
+.drop.over { border-color: var(--brand); background: var(--brand-wash); }
+.drop h2 { margin: 0; font-size: 22px; font-weight: 600; color: var(--ink); }
+.drop p { margin: 0; max-width: 46ch; }
+.drop .formats { font-size: 13px; color: var(--ink-3); }
+
+/* viewer */
+.canvasWrap { position: relative; margin: 0 auto; background: #fff; box-shadow: 0 0 0 1px var(--rule); line-height: 0; touch-action: none; }
+.canvasWrap canvas { width: 100%; height: auto; display: block; }
+#ov { position: absolute; inset: 0; cursor: crosshair; }
+.readout {
+  position: absolute; pointer-events: none; z-index: 5; line-height: 1.3;
+  background: rgba(21,34,45,.92); color: #fff; padding: 5px 8px; border-radius: 4px; font-size: 12.5px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.modehint {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 6; line-height: 1.35;
+  background: var(--brand); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 14px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25); display: flex; gap: 12px; align-items: center; max-width: 92%;
+}
+.modehint button { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.5); color: #fff; border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+.valuePop {
+  position: absolute; z-index: 7; background: var(--surface); border: 1px solid var(--brand); border-radius: 6px; padding: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.25); line-height: 1.3; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; width: 250px;
+}
+.valuePop label { flex-basis: 100%; font-size: 12.5px; color: var(--ink-2); }
+.valuePop input { width: 90px; }
+.legend { margin: 10px auto 0; font-size: 13px; color: var(--ink-2); display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; }
+
+/* rail cards */
+.steps { list-style: none; margin: 0; padding: 0; }
+.step { padding: 14px 20px 16px; border-bottom: 1px solid var(--rule-2); }
+.step h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.step .num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 12px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+}
+.step.wait .num { background: var(--rule); color: var(--ink-2); }
+.step p { margin: 0 0 8px; color: var(--ink-2); font-size: 14px; }
+.step .small { font-size: 13px; color: var(--ink-3); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.btn {
+  border: 1px solid var(--rule); background: var(--surface); border-radius: var(--radius); padding: 6px 12px; cursor: pointer;
+  font-size: 14px; line-height: 1.3;
+}
+.btn:hover { background: var(--paper); }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 500; }
+.btn.primary:hover { background: var(--brand-2); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.btn.sm { padding: 3px 9px; font-size: 13px; }
+.btn.on { background: var(--brand-wash); border-color: var(--brand); color: var(--brand-2); }
+input[type=text], input[type=number], input[type=password], select {
+  border: 1px solid var(--rule); border-radius: var(--radius); padding: 5px 8px; background: #fff; min-width: 0;
+}
+input[type=number] { width: 84px; font-variant-numeric: tabular-nums; }
+
+.status { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; min-height: 20px; }
+.status.err { color: var(--fail); }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--rule); border-top-color: var(--brand); border-radius: 50%; animation: sp .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes sp { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+
+/* checks */
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.check { border-radius: var(--radius); padding: 8px 10px; font-size: 13.5px; display: grid; grid-template-columns: 18px 1fr; gap: 8px; background: var(--paper); }
+.check.warn { background: var(--warn-wash); }
+.check.fail { background: var(--fail-wash); }
+.check .ic { width: 16px; height: 16px; border-radius: 50%; margin-top: 2px; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; background: var(--ok); }
+.check.warn .ic { background: var(--warn); }
+.check.fail .ic { background: var(--fail); }
+.check b { font-weight: 600; }
+.check .acts { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+details.labels { margin-top: 10px; font-size: 13.5px; }
+details.labels summary { cursor: pointer; color: var(--brand); }
+.axrow { display: grid; gap: 4px; margin: 10px 0; }
+.axrow .nm { font-size: 13px; font-weight: 600; }
+.axrow input[type=text] { width: 100%; }
+.axrow .u { display: flex; gap: 6px; }
+.axrow .u input { width: 80px; }
+
+/* curve chooser */
+.curvelist { display: grid; gap: 6px; margin: 8px 0; }
+.curverow { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; padding: 5px 8px; border: 1px solid var(--rule); border-radius: var(--radius); cursor: pointer; background: #fff; }
+.curverow:hover { background: var(--paper); }
+.curverow.sel { border-color: var(--head); box-shadow: inset 0 0 0 1px var(--head); background: #fff5f9; }
+.curverow .sw { width: 14px; height: 14px; border-radius: 3px; }
+.curverow select { padding: 2px 4px; }
+.ask { background: var(--brand-wash); border: 1px solid #b9d4e2; border-radius: var(--radius); padding: 10px; margin: 8px 0; }
+.ask p { color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+.ask .row .btn { min-width: 64px; }
+
+/* points */
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-bottom: 10px; }
+.fields label { font-size: 13px; color: var(--ink-2); display: grid; gap: 3px; }
+.fields input, .fields select { width: 100%; }
+table.pts { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; margin: 8px 0; }
+table.pts th { text-align: right; font-weight: 600; font-size: 12.5px; color: var(--ink-2); padding: 4px 6px; border-bottom: 1px solid var(--rule); }
+table.pts th:first-child, table.pts td:first-child { text-align: left; color: var(--ink-3); width: 28px; }
+table.pts td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--rule-2); }
+table.pts tr.flag td { background: var(--warn-wash); }
+.note { font-size: 13px; color: var(--ink-2); }
+.tablewrap { max-height: 300px; overflow: auto; }
+dialog { border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; width: min(480px, 92vw); }
+dialog::backdrop { background: rgba(21,34,45,.45); }
+dialog h2 { margin: 0 0 8px; font-size: 18px; }
+dialog label { display: grid; gap: 4px; margin: 12px 0; font-size: 13.5px; color: var(--ink-2); }
+dialog input[type=text], dialog input[type=password] { width: 100%; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: 6px; font-size: 14px; z-index: 50; }
+
+.magBox { position: fixed; top: 64px; right: 416px; z-index: 30; background: var(--surface); border: 2px solid var(--brand); border-radius: 6px; line-height: 1.3; box-shadow: 0 4px 14px rgba(0,0,0,.3); pointer-events: none; overflow: hidden; }
+.magBox.left { right: auto; left: 16px; }
+@media (max-width: 980px) { .magBox { right: 16px; } }
+.magBox canvas { width: 196px !important; height: 196px !important; display: block; }
+.magCap { font-size: 12px; padding: 3px 6px; background: var(--brand-2); color: #fff; font-variant-numeric: tabular-nums; text-align: center; }
+.curverow { grid-template-columns: 14px 1fr; }
+.curverow .small { margin-top: 1px; }
+
+.seg { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 10px; font-size: 14px; }
+.seg label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.effplot { width: 100%; height: 150px; display: block; border: 1px solid var(--rule); border-radius: 6px; background: #fff; margin-top: 4px; }
+table.effpts th:nth-child(2), table.effpts td:nth-child(2) { text-align: right; }
+table.effpts input { width: 70px; text-align: right; padding: 2px 6px; }
+table.effpts td:last-child { width: 34px; text-align: right; }
+table.effpts tr.sel td { background: #eaf4ea; }
+table.pts th { white-space: normal; }
+
+/* the instruction banner (with its Cancel / Done button) stays on screen however far the page is scrolled */
+.modehint { position: fixed !important; top: 10px !important; left: calc(190px + (100vw - 400px - 190px) / 2) !important; transform: translateX(-50%) !important; z-index: 40 !important; max-width: min(640px, calc(100vw - 400px - 220px)) !important; }
+.magBox { top: 88px !important; }
+@media (max-width: 980px) { .modehint { left: 50% !important; max-width: calc(100vw - 32px) !important; } }
+#btnEffAdd.done { background: var(--brand-2); }
+
+.top { padding: 9px 20px !important; }
+.logo { height: 34px; width: 34px; display: block; flex: none; }
+.modehint { left: calc(340px + (100vw - 400px - 340px) / 2) !important; max-width: min(640px, calc(100vw - 400px - 370px)) !important; }
+@media (max-width: 980px) { .modehint { left: 50% !important; max-width: calc(100vw - 32px) !important; } }
+
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true"><path d="M4 3v19h19" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 8c6 0 10 2 14 9" stroke="#7fd3e6" stroke-width="2.2" stroke-linecap="round"/><circle cx="6" cy="8" r="1.8" fill="#fff"/><circle cx="13" cy="10.2" r="1.8" fill="#fff"/><circle cx="20" cy="17" r="1.8" fill="#fff"/></svg>
+    <span>Cascade Pump Curve Digitizer</span>
+  </div>
+  <img class="logo" alt="Cascade logo" src="data:image/png;base64,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">
+</header>
+
+<main class="bench">
+  <section class="stage" id="stage">
+    <div class="drop" id="drop">
+      <h2>Drop a pump curve here</h2>
+      <p>Drag in a PNG or JPG, paste one from the clipboard, or choose a file. The head curves are traced for you; you set the axes by clicking two ticks on each.</p>
+      <div class="row" style="justify-content:center"><button class="btn primary" id="btnChoose" type="button">Choose image</button><button class="btn" id="btnPaste" type="button">Paste image</button></div>
+      <span class="formats">Head curves are digitized; efficiency, power and NPSH curves are left alone for now. Several speeds or impeller sizes are fine.</span>
+    </div>
+    <div id="viewer" hidden>
+      <div class="canvasWrap" id="wrap">
+        <canvas id="cv"></canvas>
+        <canvas id="ov"></canvas>
+        <div class="readout" id="readout" hidden></div>
+        <div class="modehint" id="hint" hidden></div>
+        <div class="valuePop" id="valuePop" hidden></div>
+        <div class="magBox" id="magBox" hidden><canvas id="mag" width="196" height="196"></canvas><div class="magCap" id="magCap"></div></div>
+      </div>
+      <div class="legend">
+        <label><input type="checkbox" id="optCal" checked> Show axis calibration marks</label>
+        <span><i style="background:#c2185b"></i>TDH points</span>
+        <span>Click a point to select it, then nudge it with the arrow keys (Shift moves 5 px). Drag to move, double-click to remove.</span>
+      </div>
+    </div>
+    <input type="file" id="fileIn" accept="image/png,image/jpeg,image/*" hidden>
+  </section>
+
+  <aside class="rail" aria-label="Digitizing steps">
+    <ol class="steps">
+      <li class="step" id="stepImage">
+        <h3><span class="num">1</span>Upload Pump Curve Image</h3>
+        <p class="small" id="fileInfo">No image yet.</p>
+        <button class="btn sm" id="btnReplace" type="button">Replace image</button>
+      </li>
+      <li class="step" id="stepAxes" hidden>
+        <h3><span class="num">2</span>Calibrate Flow and TDH Axes</h3>
+        <p>Click two ticks on each axis and type their values. The chart's grid lines make the clicks snap into place.</p>
+        <div class="row">
+          <button class="btn primary" id="btnCalFlow" type="button">Calibrate flow axis</button>
+          <button class="btn primary" id="btnCalHead" type="button">Calibrate head axis</button>
+        </div>
+        <ul class="checks" id="checks" style="margin-top:10px"></ul>
+      </li>
+      <li class="step" id="stepCurve" hidden>
+        <h3><span class="num">3</span>Select and Edit Head Curvefit <span class="small" id="curveCount" style="font-weight:400"></span></h3>
+        <div class="ask" id="askCurve" hidden></div>
+        <div class="curvelist" id="curveList"></div>
+      </li>
+      <li class="step" id="stepPoints" hidden>
+        <h3><span class="num">4</span><span id="ptsTitle">Export Head Curve Data</span></h3>
+        <div class="fields">
+          <label>Number of points<input type="number" id="outN" min="2" max="60" value="10"></label>
+          <label>Flow unit<select id="outFlowUnit"><option value="gpm">gpm</option><option value="m3/h">m³/h</option><option value="L/s">L/s</option></select></label>
+          <label>From flow<input type="number" id="outQ0" step="any"></label>
+          <label>To flow<input type="number" id="outQ1" step="any"></label>
+          <label>Head unit<select id="outHeadUnit"><option value="ft">ft</option><option value="m">m</option></select></label>
+          <label>&nbsp;<button class="btn" id="btnAddPoint" type="button">Add a point</button></label>
+        </div>
+        <div class="tablewrap">
+          <table class="pts"><thead><tr><th>#</th><th id="thQ">Flow</th><th id="thH">TDH</th></tr></thead><tbody id="ptsBody"></tbody></table>
+        </div>
+        <p class="note" id="ptsNote"></p>
+        <div class="row"><button class="btn sm" id="btnResetCurve" type="button" hidden>Reset to the traced curve</button></div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn primary" id="btnCopy" type="button">Copy for Excel</button>
+          <button class="btn" id="btnCsv" type="button">Download CSV</button>
+          <label class="small"><input type="checkbox" id="optHeaders" checked> Include headers</label>
+        </div>
+      </li>
+      <li class="step" id="stepEff" hidden>
+        <h3><span class="num">5</span>Export Hydraulic Efficiency Data</h3>
+        <div class="seg" role="radiogroup" aria-label="How efficiency is drawn on this chart">
+          <label><input type="radio" name="effmode" value="contours" checked> Efficiency lines (contours)</label>
+          <label><input type="radio" name="effmode" value="curve"> Efficiency curve</label>
+        </div>
+        <div id="panelContours">
+          <p>For the head curve <b id="effCurveName">none selected yet</b>: click it where it crosses an efficiency line, then type that line's efficiency. Do this for every line it crosses.</p>
+          <div class="row"><button class="btn primary" id="btnEffAdd" type="button">Add efficiency points</button></div>
+          <p class="small" id="effNone" style="margin-top:8px">No points yet.</p>
+          <div class="tablewrap"><table class="pts effpts"><thead><tr><th>#</th><th id="thEQ">Flow</th><th>Eff (%)</th><th></th></tr></thead><tbody id="effPtsBody"></tbody></table></div>
+        </div>
+        <div id="panelCurve" hidden>
+          <p>Click two ticks on the efficiency (%) scale, then click the efficiency curve on the chart.</p>
+          <ul class="checks" id="effAxisCheck" style="margin-bottom:8px"></ul>
+          <div class="row"><button class="btn" id="btnEffTrace" type="button">Click on the efficiency curve</button></div>
+          <p class="small" id="effCurveStatus" style="margin-top:8px"></p>
+        </div>
+        <div class="fields" style="margin-top:10px">
+          <label id="effOutputWrap">Table<select id="effOutput"><option value="entered">Points as entered</option><option value="fit">Fitted curve</option></select></label>
+          <label id="effMethodWrap">Fit<select id="effMethod"><option value="auto">Automatic</option><option value="quad">Quadratic</option><option value="cubic">Cubic</option><option value="through">Smooth through points</option></select></label>
+          <label id="effNWrap">Number of points<input type="number" id="effN" min="2" max="60" value="10"></label>
+          <label id="effQ0Wrap">From flow<input type="number" id="effQ0" step="any"></label>
+          <label id="effQ1Wrap">To flow<input type="number" id="effQ1" step="any"></label>
+        </div>
+        <canvas id="effPlot" class="effplot" aria-label="Efficiency against flow"></canvas>
+        <p class="note" id="effNote"></p>
+        <div class="tablewrap">
+          <table class="pts"><thead><tr><th>#</th><th id="thXQ">Flow</th><th>Hydraulic efficiency (%)</th></tr></thead><tbody id="effOutBody"></tbody></table>
+        </div>
+        <p class="small" id="effExportCount"></p>
+        <div class="row" style="margin-top:8px">
+          <button class="btn primary" id="btnEffCopy" type="button">Copy for Excel</button>
+          <button class="btn" id="btnEffCsv" type="button">Download CSV</button>
+          <label class="small"><input type="checkbox" id="optEffHeaders" checked> Include headers</label>
+        </div>
+        <p class="small" style="margin-top:6px">Efficiency is exported as a decimal: 50 % becomes 0.5. The table above shows percent.</p>
+      </li>
+    </ol>
+  </aside>
+</main>
+
+<script>
+/* PumpCurve core: pure functions on grayscale buffers. Works in browser and node. */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.PCCore = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  /* ---------- basics ---------- */
+  function grayFromRGBA(d, w, h) {
+    const g = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
+      // composite onto white so transparent pixels read as paper
+      const a = d[j + 3] / 255;
+      const r = d[j] * a + 255 * (1 - a), gg = d[j + 1] * a + 255 * (1 - a), b = d[j + 2] * a + 255 * (1 - a);
+      g[i] = (0.299 * r + 0.587 * gg + 0.114 * b + 0.5) | 0;
+    }
+    return g;
+  }
+
+  function median(a) {
+    if (!a.length) return NaN;
+    const s = a.slice().sort((x, y) => x - y);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  /* ---------- grid detection ---------- */
+  // Finds long horizontal / vertical lines (grid + frame). Returns centres with sub-pixel precision.
+  function detectGrid(g, w, h) {
+    const INK = 215;
+    const rowFrac = new Float32Array(h), colFrac = new Float32Array(w);
+    for (let y = 0; y < h; y++) {
+      let c = 0;
+      for (let x = 0; x < w; x++) if (g[y * w + x] < INK) c++;
+      rowFrac[y] = c / w;
+    }
+    for (let x = 0; x < w; x++) {
+      let c = 0;
+      for (let y = 0; y < h; y++) if (g[y * w + x] < INK) c++;
+      colFrac[x] = c / h;
+    }
+    const edge = 8;
+    const pick = (frac, n, minFrac) => {
+      const out = [];
+      let i = 0;
+      while (i < n) {
+        if (frac[i] >= minFrac && frac[i] < 0.97 && i > edge && i < n - edge) {
+          let j = i, sw = 0, swx = 0;
+          while (j < n && frac[j] >= minFrac && frac[j] < 0.97) { sw += frac[j]; swx += frac[j] * j; j++; }
+          out.push({ pos: swx / sw, frac: sw / (j - i), width: j - i });
+          i = j;
+        } else i++;
+      }
+      return out;
+    };
+    // adaptive minimum fraction: the grid lines are the dominant repeating long lines
+    const hLines = pick(rowFrac, h, 0.32), vLines = pick(colFrac, w, 0.32);
+    // gridline gray level: median gray along the detected lines, ignoring dark crossings
+    const samples = [];
+    for (const l of hLines.slice(0, 8)) {
+      const y = Math.round(l.pos);
+      for (let x = 0; x < w; x += 7) samples.push(g[y * w + x]);
+    }
+    const dark = samples.filter(v => v < 215);
+    const gridLevel = dark.length ? median(dark) : 180;
+    return { hLines, vLines, gridLevel, rowFrac, colFrac };
+  }
+
+  // Longest chain of (nearly) equally spaced lines = the real grid; stray axis spines / title borders / half-lines are left out
+  function longestChain(pos) {
+    const p = pos.slice().sort((x, y) => x - y);
+    let best = [];
+    for (let i = 0; i < p.length - 1; i++) {
+      for (let j = i + 1; j < p.length; j++) {
+        let ref = p[j] - p[i];
+        if (ref < 8) continue;
+        const chain = [p[i], p[j]];
+        for (let k = j + 1; k < p.length; k++) {
+          const d = p[k] - chain[chain.length - 1];
+          if (Math.abs(d - ref) <= 0.1 * ref) { chain.push(p[k]); ref = (chain[chain.length - 1] - chain[0]) / (chain.length - 1); }
+          else if (d > ref * 1.15) break;
+        }
+        if (chain.length > best.length || (chain.length === best.length && chain.length >= 3 && (chain[chain.length - 1] - chain[0]) > (best[best.length - 1] - best[0]))) best = chain;
+      }
+    }
+    return best;
+  }
+
+  // Plot box from the dominant equally spaced grid
+  function plotBox(grid) {
+    const strong = (lines) => { const mx = Math.max(...lines.map(l => l.frac)); return lines.filter(l => l.frac >= 0.7 * mx).map(l => l.pos); };
+    const xs = longestChain(strong(grid.vLines)), ys = longestChain(strong(grid.hLines));
+    if (xs.length < 3 || ys.length < 3) return null;
+    return { x0: xs[0], x1: xs[xs.length - 1], y0: ys[0], y1: ys[ys.length - 1], nx: xs.length, ny: ys.length };
+  }
+
+  // Whitens grid-line pixels that are not darker than the grid line itself, so curves crossing grid lines stay intact
+  function cleanGray(g, w, h, grid) {
+    const out = g.slice();
+    const lineLevel = (vals) => { const v = vals.filter(t => t < 215); return v.length ? median(v) : 180; };
+    for (const l of grid.hLines) {
+      const y = Math.round(l.pos), vals = [];
+      for (let x = 0; x < w; x += 5) vals.push(g[y * w + x]);
+      const lvl = lineLevel(vals) - 12;
+      for (let yy = y - 1; yy <= y + 1; yy++) { if (yy < 0 || yy >= h) continue; for (let x = 0; x < w; x++) if (out[yy * w + x] >= lvl && out[yy * w + x] < 235) out[yy * w + x] = 255; }
+    }
+    for (const l of grid.vLines) {
+      const x = Math.round(l.pos), vals = [];
+      for (let y = 0; y < h; y += 5) vals.push(g[y * w + x]);
+      const lvl = lineLevel(vals) - 12;
+      for (let xx = x - 1; xx <= x + 1; xx++) { if (xx < 0 || xx >= w) continue; for (let y = 0; y < h; y++) if (out[y * w + xx] >= lvl && out[y * w + xx] < 235) out[y * w + xx] = 255; }
+    }
+    return out;
+  }
+
+  /* ---------- text label blobs ---------- */
+  // Connected components of ink inside a rectangle, merged horizontally so a multi-digit number is one blob.
+  function findBlobs(g, w, h, rect, opts) {
+    opts = opts || {};
+    const thr = opts.thr || 150, mergeX = opts.mergeX || 5, mergeY = opts.mergeY || 1;
+    const x0 = Math.max(0, Math.floor(rect.x0)), x1 = Math.min(w - 1, Math.ceil(rect.x1));
+    const y0 = Math.max(0, Math.floor(rect.y0)), y1 = Math.min(h - 1, Math.ceil(rect.y1));
+    const rw = x1 - x0 + 1, rh = y1 - y0 + 1;
+    if (rw <= 0 || rh <= 0) return [];
+    const m = new Uint8Array(rw * rh);
+    for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) m[y * rw + x] = g[(y + y0) * w + (x + x0)] < thr ? 1 : 0;
+    // dilate
+    const d = new Uint8Array(rw * rh);
+    for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+      if (!m[y * rw + x]) continue;
+      for (let dy = -mergeY; dy <= mergeY; dy++) for (let dx = -mergeX; dx <= mergeX; dx++) {
+        const yy = y + dy, xx = x + dx;
+        if (yy >= 0 && yy < rh && xx >= 0 && xx < rw) d[yy * rw + xx] = 1;
+      }
+    }
+    const lab = new Int32Array(rw * rh), blobs = [];
+    const stack = [];
+    for (let s = 0; s < rw * rh; s++) {
+      if (!d[s] || lab[s]) continue;
+      const id = blobs.length + 1;
+      let minx = 1e9, maxx = -1, miny = 1e9, maxy = -1, area = 0;
+      stack.length = 0; stack.push(s); lab[s] = id;
+      while (stack.length) {
+        const p = stack.pop();
+        const py = (p / rw) | 0, px = p - py * rw;
+        if (m[p]) { area++; if (px < minx) minx = px; if (px > maxx) maxx = px; if (py < miny) miny = py; if (py > maxy) maxy = py; }
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const yy = py + dy, xx = px + dx;
+          if (yy < 0 || yy >= rh || xx < 0 || xx >= rw) continue;
+          const q = yy * rw + xx;
+          if (d[q] && !lab[q]) { lab[q] = id; stack.push(q); }
+        }
+      }
+      if (area > 0) blobs.push({ x0: minx + x0, x1: maxx + x0, y0: miny + y0, y1: maxy + y0, cx: (minx + maxx) / 2 + x0, cy: (miny + maxy) / 2 + y0, w: maxx - minx + 1, h: maxy - miny + 1, area });
+    }
+    return blobs;
+  }
+
+  /* ---------- linear calibration ---------- */
+  function fitLinear(pix, val) {
+    const n = pix.length;
+    if (n < 2) return null;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let i = 0; i < n; i++) { sx += pix[i]; sy += val[i]; sxx += pix[i] * pix[i]; sxy += pix[i] * val[i]; }
+    const den = n * sxx - sx * sx;
+    if (Math.abs(den) < 1e-9) return null;
+    const a = (n * sxy - sx * sy) / den, b = (sy - a * sx) / n;
+    let ss = 0, maxErr = 0;
+    for (let i = 0; i < n; i++) { const e = a * pix[i] + b - val[i]; ss += e * e; if (Math.abs(e) > maxErr) maxErr = Math.abs(e); }
+    return { a, b, rms: Math.sqrt(ss / n), maxErr, n };
+  }
+
+  /* ---------- curve tracking ---------- */
+  function polyFit(xs, ys, deg) {
+    // least squares polynomial on centred x; returns evaluator
+    const n = xs.length, x0 = xs[n - 1];
+    const m = deg + 1, A = [], B = new Array(m).fill(0);
+    for (let i = 0; i < m; i++) A.push(new Array(m).fill(0));
+    for (let k = 0; k < n; k++) {
+      const t = xs[k] - x0, pw = [1];
+      for (let i = 1; i < 2 * m; i++) pw.push(pw[i - 1] * t);
+      for (let i = 0; i < m; i++) { B[i] += ys[k] * pw[i]; for (let j = 0; j < m; j++) A[i][j] += pw[i + j]; }
+    }
+    // gaussian elimination
+    for (let i = 0; i < m; i++) {
+      let p = i; for (let r = i + 1; r < m; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;
+      [A[i], A[p]] = [A[p], A[i]]; [B[i], B[p]] = [B[p], B[i]];
+      if (Math.abs(A[i][i]) < 1e-12) return null;
+      for (let r = i + 1; r < m; r++) { const f = A[r][i] / A[i][i]; for (let c = i; c < m; c++) A[r][c] -= f * A[i][c]; B[r] -= f * B[i]; }
+    }
+    const co = new Array(m).fill(0);
+    for (let i = m - 1; i >= 0; i--) { let sum = B[i]; for (let j = i + 1; j < m; j++) sum -= A[i][j] * co[j]; co[i] = sum / A[i][i]; }
+    return (x) => { const t = x - x0; let v = 0, p = 1; for (let i = 0; i < m; i++) { v += co[i] * p; p *= t; } return v; };
+  }
+
+  // Looks ahead (in direction dir) for a stroke that continues the curve after an interruption (label box, white patch,
+  // stretch hidden under a bold grid line). Every coherent stretch of ink is a candidate; the one that best continues the
+  // curve's position and direction wins.
+  function bridge(g, w, h, hist, x, dir, box, recent, opts) {
+    const n = Math.min(hist.length, 70), sub = hist.slice(-n);
+    const f2 = polyFit(sub.map(p => p.x), sub.map(p => p.y), 2), f1 = fitLinear(sub.slice(-25).map(p => p.x), sub.slice(-25).map(p => p.y));
+    if (!f2 || !f1) return null;
+    const last = hist[hist.length - 1];
+    // half of the quadratic's curvature: over a gap the bend of the last stretch is a poor guide, a straight tangent a poor one too
+    const pred = xx => { const lin = f1.a * xx + f1.b, q = f2(xx); return lin + (Math.abs(q - lin) < 12 + 0.25 * Math.abs(xx - last.x) ? 0.5 * (q - lin) : 0); };
+    const rs = recent.length ? recent.slice().sort((p, q) => p - q)[recent.length >> 1] : 30;
+    const lim = Math.min(160, Math.max(rs + 45, 70)), maxB = opts.maxBridge || 140, minRun = opts.minRun || 14;
+    let ys = [], xsS = [], cands = [];
+    const flush = () => {
+      if (xsS.length >= minRun) {
+        const fit = fitLinear(xsS, ys), xm = xsS[xsS.length >> 1], sp = (pred(xm + 1) - pred(xm - 1)) / 2;
+        if (fit) {
+          let dy = 0; for (let i = 0; i < xsS.length; i++) dy += Math.abs(ys[i] - pred(xsS[i])); dy /= xsS.length;
+          const ds = Math.abs(fit.a - sp), kStart = Math.abs(xsS[0] - x);
+          if (dy < 4 + 0.05 * kStart && ds < 0.5) cands.push({ x: xsS[xsS.length - 1], y: ys[ys.length - 1], slope: fit.a, score: dy + 6 * ds + 0.02 * kStart });
+        }
+      }
+      ys = []; xsS = [];
+    };
+    for (let k = 1; k <= maxB; k++) {
+      const xx = x + dir * k;
+      if (xx < box.x0 - 3 || xx > box.x1 + 3) break;
+      const yy = pred(xx), tol = 2.5 + 0.04 * k;
+      let found = -1, fv = 999;
+      for (let yv = Math.round(yy - tol); yv <= Math.round(yy + tol); yv++) { if (yv < 0 || yv >= h) continue; const v = g[yv * w + xx]; if (v < lim && v < fv) { fv = v; found = yv; } }
+      if (found >= 0) { xsS.push(xx); ys.push(found); }
+      else flush();
+    }
+    flush();
+    if (typeof window !== 'undefined' && window.__dbg) window.__dbg.push('bridge from x=' + x + ' dir=' + dir + ' pred(x+20)=' + pred(x + dir * 20).toFixed(1) + ' cands=' + JSON.stringify(cands.map(q => [q.x, Math.round(q.y), +q.score.toFixed(1)])));
+    if (!cands.length) return null;
+    cands.sort((p, q) => p.score - q.score);
+    return cands[0];
+  }
+
+  // Follows a curve along x from a seed. A narrow window around a smooth prediction keeps crossing lines from capturing the track.
+  //   opts.hold: darkest-pixel threshold accepted while following   opts.win: half window around the prediction
+  function trackCurve(g, w, h, seed, dir, box, opts) {
+    opts = opts || {};
+    const hold = opts.hold || 150, win = opts.win || 2, maxGap = opts.maxGap || 25, histN = opts.histN || 70;
+    const maxSlope = opts.maxSlope || 3;
+    const pts = [{ x: seed.x, y: seed.y }];
+    let x = seed.x, y = seed.y, gap = 0, slope = opts.slope0 || 0;
+    const hist = [{ x, y }], recent = []; let bridged = 0;
+    const yMin = box.y0 - 2, yMax = box.y1 + 2;
+    const sign = dir;
+    for (;;) {
+      const nx = x + dir;
+      if (nx < box.x0 - 3 || nx > box.x1 + 3) break;
+      // prediction: quadratic through recent history when available, else linear slope
+      let yp = y + slope * 1;
+      if (hist.length >= 24) {
+        const xs = hist.map(p => p.x), ys = hist.map(p => p.y);
+        const f = polyFit(xs, ys, 2);
+        if (f) { const q = f(nx); if (isFinite(q) && Math.abs(q - y) < 4) yp = q; }
+      }
+      const wEff = win + Math.min(gap * 0.15, 3);
+      let best = -1, bestScore = 1e9;
+      const ya = Math.max(Math.round(yp - wEff), 0), yb = Math.min(Math.round(yp + wEff), h - 1);
+      // after a real gap, new ink must be about as dark as the curve itself (faint ink beyond a curve's end is a contour, text or grid line)
+      let lim = hold;
+      if (gap >= 8 && recent.length >= 6) { const rs = recent.slice().sort((p, q) => p - q); lim = Math.min(hold, Math.max(rs[rs.length >> 1] + 30, 40)); }
+      for (let yy = ya; yy <= yb; yy++) {
+        const v = g[yy * w + nx];
+        if (v < lim) {
+          const score = Math.abs(yy - yp) + v * 0.012;
+          if (score < bestScore) { bestScore = score; best = yy; }
+        }
+      }
+      if (best >= 0 && gap >= 10 && Math.abs(best - yp) > 2.6 + 0.12 * gap) break;   // after a real gap a dash lands exactly on the predicted line; anything else is another object
+      if (best >= 0) {
+        let sw = 0, swy = 0;
+        for (let yy = best - 2; yy <= best + 2; yy++) {
+          if (yy < 0 || yy >= h) continue;
+          const v = g[yy * w + nx];
+          const wt = v < 170 ? (170 - v) : 0;
+          sw += wt; swy += wt * yy;
+        }
+        const yc = sw > 0 ? swy / sw : best;
+        recent.push(g[best * w + nx]); if (recent.length > 30) recent.shift();
+        y = yc; gap = 0; x = nx;
+        hist.push({ x, y });
+        if (hist.length > histN) hist.shift();
+        if (hist.length >= 5) {
+          const k = Math.min(hist.length, 24), sub = hist.slice(-k);
+          const f = fitLinear(sub.map(p => p.x), sub.map(p => p.y));
+          if (f) slope = Math.max(-maxSlope, Math.min(maxSlope, f.a));
+        }
+        pts.push({ x, y });
+      } else {
+        gap++;
+        if (gap > maxGap) {
+          // the curve may continue behind a label box or a white patch: look ahead along the extrapolated path for a coherent stroke
+          const br = (opts.bridge === false || bridged >= 3 || hist.length < 25) ? null : bridge(g, w, h, hist, x, dir, box, recent, opts);
+          if (!br) break;
+          bridged++; x = br.x; y = br.y; gap = 0;
+          hist.length = 0; hist.push({ x, y }); slope = br.slope;
+          continue;
+        }
+        x = nx; y = Math.max(yMin, Math.min(yMax, yp));
+      }
+    }
+    if (dir < 0) pts.reverse();
+    return pts;
+  }
+
+  // Removes a ragged tail where the track wandered off the true curve (residual vs a smooth fit of the reliable part)
+  function trimTail(pts, tol) {
+    tol = tol || 2.4;
+    if (pts.length < 40) return pts;
+    const n = pts.length, start = Math.max(30, Math.floor(n * 0.6));
+    let run = 0, first = -1;
+    for (let k = start; k < n; k++) {
+      const take = pts.slice(Math.max(0, k - 80), k);
+      const f = polyFit(take.map(p => p.x), take.map(p => p.y), 2);
+      if (!f) break;
+      const e = Math.abs(f(pts[k].x) - pts[k].y);
+      if (e > tol) { if (run === 0) first = k; run++; if (run >= 4) return pts.slice(0, first); }
+      else { run = 0; first = -1; }
+    }
+    return pts;
+  }
+
+  // Cuts the track where its direction changes abruptly versus the recent trend (e.g. the curve ended and the tracker
+  // slid onto a different line that meets it at an angle)
+  function trimBySlope(pts, thr) {
+    thr = thr || 0.3;
+    const n = pts.length;
+    if (n < 90) return pts;
+    const ys = pts.map(p => p.y), sm = new Array(n).fill(0);
+    const hw = 4;
+    for (let i = 0; i < n; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - hw); k <= Math.min(n - 1, i + hw); k++) { a += ys[k]; c++; } sm[i] = a / c; }
+    const L = 8, sl = new Array(n).fill(0);
+    for (let i = L; i < n; i++) sl[i] = (sm[i] - sm[i - L]) / (pts[i].x - pts[i - L].x || L);
+    let run = 0;
+    for (let i = 70; i < n; i++) {
+      const lo = i - 60, hi = i - 12;
+      const xs = [], vs = [];
+      for (let k = lo; k <= hi; k += 2) { xs.push(k); vs.push(sl[k]); }
+      const f = fitLinear(xs, vs);
+      if (!f) continue;
+      const ref = f.a * i + f.b, dev = Math.abs(sl[i] - ref);
+      if (dev > thr) { run++; if (run >= 8) return pts.slice(0, Math.max(40, i - 8 - L)); } else run = 0;
+    }
+    return pts;
+  }
+
+  /* ---------- axis calibration from tick labels ---------- */
+  const UNIT_FACTORS = [
+    // [unitA, unitB, value_B = factor * value_A]
+    ['gpm', 'm3/h', 0.2271247], ['ft', 'm', 0.3048], ['hp', 'kW', 0.7456999], ['usgpm', 'm3/h', 0.2271247]
+  ];
+  function normUnit(u) {
+    u = String(u || '').toLowerCase().replace(/[\s\u00b3^]/g, m => m === '\u00b3' ? '3' : '').replace('m³', 'm3');
+    if (u === 'us gpm' || u === 'usgpm' || u === 'gal/min') return 'gpm';
+    if (u === 'kw') return 'kW';
+    if (u === 'm3/h' || u === 'm3/hr' || u === 'm3h') return 'm3/h';
+    return u;
+  }
+  function unitFactor(a, b) {
+    a = normUnit(a); b = normUnit(b);
+    for (const [ua, ub, f] of UNIT_FACTORS) { if (ua === a && ub === b) return f; if (ua === b && ub === a) return 1 / f; }
+    return null;
+  }
+
+  function clusterBy(items, key, tol) {
+    const s = items.slice().sort((a, b) => key(a) - key(b)), groups = [];
+    for (const it of s) {
+      const gp = groups[groups.length - 1];
+      if (gp && Math.abs(key(it) - gp.mean) <= tol) { gp.items.push(it); gp.mean = gp.items.reduce((a, b) => a + key(b), 0) / gp.items.length; }
+      else groups.push({ items: [it], mean: key(it) });
+    }
+    return groups;
+  }
+
+  // Finds the label tracks (rows below/above the plot or columns left/right) that could hold an axis's tick labels
+  function labelTracks(g, w, h, box, side) {
+    const pad = 14;
+    let rect, orient;
+    if (side === 'bottom') { rect = { x0: box.x0 - 28, x1: box.x1 + 28, y0: box.y1 + 3, y1: Math.min(h - 8, box.y1 + 70) }; orient = 'x'; }
+    else if (side === 'top') { rect = { x0: box.x0 - 28, x1: box.x1 + 28, y0: Math.max(4, box.y0 - 70), y1: box.y0 - 3 }; orient = 'x'; }
+    else if (side === 'left') { rect = { x0: 4, x1: box.x0 - 3, y0: box.y0 - 8, y1: box.y1 + 8 }; orient = 'y'; }
+    else { rect = { x0: box.x1 + 3, x1: w - 6, y0: box.y0 - 8, y1: box.y1 + 8 }; orient = 'y'; }
+    let blobs = findBlobs(g, w, h, rect, { mergeX: orient === 'x' ? 5 : 4, mergeY: 1 });
+    // two labels that touch (e.g. the "0" of two axes at the origin) form one tall blob: split it on empty ink rows
+    const hs = blobs.filter(b => b.h >= 6 && b.h <= 30).map(b => b.h);
+    const hmed = hs.length ? median(hs) : 10;
+    const split = [];
+    for (const b of blobs) {
+      if (b.h > hmed * 1.6 && b.h < hmed * 3.2) {
+        const rows = [];
+        for (let y = b.y0; y <= b.y1; y++) { let c = 0; for (let x = b.x0; x <= b.x1; x++) if (g[y * w + x] < 150) c++; rows.push(c); }
+        let start = -1;
+        const segs = [];
+        for (let i = 0; i <= rows.length; i++) {
+          if (i < rows.length && rows[i] > 0) { if (start < 0) start = i; }
+          else if (start >= 0) { segs.push([start, i - 1]); start = -1; }
+        }
+        if (segs.length > 1) {
+          for (const [sa, sb] of segs) {
+            let minx = 1e9, maxx = -1;
+            for (let y = b.y0 + sa; y <= b.y0 + sb; y++) for (let x = b.x0; x <= b.x1; x++) if (g[y * w + x] < 150) { if (x < minx) minx = x; if (x > maxx) maxx = x; }
+            split.push({ x0: minx, x1: maxx, y0: b.y0 + sa, y1: b.y0 + sb, cx: (minx + maxx) / 2, cy: (b.y0 + sa + b.y0 + sb) / 2, w: maxx - minx + 1, h: sb - sa + 1, area: b.area });
+          }
+          continue;
+        }
+      }
+      split.push(b);
+    }
+    blobs = split.filter(b => b.area >= 4 && b.h >= 5 && b.h <= 24 && b.w >= 3 && b.w <= 60);
+    if (!blobs.length) return { orient, tracks: [], blobs };
+    const hm = median(blobs.map(b => b.h));
+    blobs = blobs.filter(b => b.h >= hm * 0.55 && b.h <= hm * 1.8);
+    let groups;
+    if (orient === 'x') groups = clusterBy(blobs, b => b.cy, 3.5);
+    else groups = clusterBy(blobs, b => b.x1, 4.5);
+    // order tracks nearest-to-plot first
+    groups.sort((a, b) => orient === 'x'
+      ? (side === 'bottom' ? a.mean - b.mean : b.mean - a.mean)
+      : (side === 'left' ? b.mean - a.mean : a.mean - b.mean));
+    return { orient, tracks: groups.map(gp => ({ blobs: gp.items.sort((a, b) => orient === 'x' ? a.cx - b.cx : a.cy - b.cy), mean: gp.mean })), blobs };
+  }
+
+  // Picks the n consecutive blobs whose positions are the most evenly spaced
+  function bestWindow(pos, n) {
+    if (pos.length < n) return null;
+    let best = null;
+    for (let i = 0; i + n <= pos.length; i++) {
+      const sub = pos.slice(i, i + n), idx = sub.map((_, k) => k);
+      const f = fitLinear(idx, sub);
+      if (!f) continue;
+      const spacing = Math.abs(f.a) || 1;
+      const score = f.rms / spacing;
+      if (!best || score < best.score) best = { start: i, score, spacing, rms: f.rms };
+    }
+    return best;
+  }
+
+  // Matches evenly spaced label positions to n expected labels, tolerating labels hidden behind other ink
+  // and unit text. Returns [{idx, pos}] or null.
+  function matchLabels(pos, n, edges, orient, hintPx) {
+    const p = pos.slice().sort((a, b) => a - b);
+    if (p.length < 2) return null;
+    const diffs = [];
+    for (let i = 1; i < p.length; i++) diffs.push(p[i] - p[i - 1]);
+    // base spacing: the candidate step that the largest number of labels agree on
+    let S0 = NaN, bestKeep = null;
+    const cands = Array.from(new Set(diffs.filter(d => d > 5).map(d => Math.round(d * 2) / 2))).sort((x, y) => x - y);
+    for (const S of cands) {
+      for (const anchor of p) {
+        const keep = p.filter(q => { const r = (q - anchor) / S; return Math.abs(r - Math.round(r)) < 0.14; });
+        if (keep.length < 2) continue;
+        // the labels must span no more steps than the axis has ticks (a finer step that merely divides the true one is rejected)
+        const span = Math.round((keep[keep.length - 1] - keep[0]) / S) + 1;
+        if (span > n + 2 && !hintPx) continue;
+        if (!bestKeep || keep.length > bestKeep.length) { bestKeep = keep; S0 = S; }
+      }
+    }
+    if (!bestKeep || bestKeep.length < 2) return null;
+    // refine step from kept labels
+    {
+      const ii = bestKeep.map(q => Math.round((q - bestKeep[0]) / S0));
+      const ff = fitLinear(ii, bestKeep);
+      if (ff && isFinite(ff.a) && ff.a > 3) S0 = ff.a;
+    }
+    // several axes can share one label column (stacked panels): choose the window of n labels closest to where the axis was reported
+    if (bestKeep.length > n + 2 && hintPx) {
+      const wins = [];
+      for (let o = 0; o + n <= bestKeep.length; o++) {
+        const a0 = bestKeep[o], a1 = bestKeep[o + n - 1];
+        wins.push({ o, score: (Math.abs(a0 - hintPx[0]) + Math.abs(a1 - hintPx[1])) / 2 / S0 });
+      }
+      wins.sort((x, y) => x.score - y.score);
+      const wsel = wins[0];
+      const sel = bestKeep.slice(wsel.o, wsel.o + n);
+      const ii = sel.map(q => Math.round((q - sel[0]) / S0));
+      const ff = fitLinear(ii, sel);
+      return { items: sel.map((q, i) => ({ idx: ii[i], pos: q })), spacing: Math.abs(ff ? ff.a : S0), ambiguous: wins.length > 1 && wins[1].score - wsel.score < 0.4 || wsel.score > 0.8, offsets: wins.length, kept: sel.length, total: p.length, rms: ff ? ff.rms : 0, windowed: true };
+    }
+    // an axis-title (e.g. "ft", "gpm") can sit exactly on the next label position: drop it from the end where titles usually are
+    // (top of a vertical axis, right end of a horizontal axis)
+    let extra = bestKeep.length - n;
+    if (extra > 2) return null;
+    while (bestKeep.length > n) bestKeep = orient === 'x' ? bestKeep.slice(0, -1) : bestKeep.slice(1);
+    let idx0 = bestKeep.map(q => Math.round((q - bestKeep[0]) / S0));
+    if (idx0[idx0.length - 1] + 1 > n && bestKeep.length >= 2) {
+      const dropped = orient === 'x' ? bestKeep.slice(0, -1) : bestKeep.slice(1);
+      const i2 = dropped.map(q => Math.round((q - dropped[0]) / S0));
+      if (i2[i2.length - 1] + 1 <= n) { bestKeep = dropped; idx0 = i2; }
+    }
+    // refine spacing by regression
+    const f = fitLinear(idx0, bestKeep);
+    if (!f) return null;
+    const S = f.a;
+    if (new Set(idx0).size !== idx0.length) return null;
+    const R = idx0[idx0.length - 1];
+    if (R + 1 > n) return null;
+    const offs = [];
+    for (let o = 0; o <= n - 1 - R; o++) offs.push(o);
+    let bestO = offs[0], bestScore = 1e18, tie = false;
+    if (offs.length > 1 && edges) {
+      for (const o of offs) {
+        const P0 = f.b + (0 - o) * S, Pn = f.b + (n - 1 - o) * S;
+        const sc = Math.min(Math.abs(P0 - edges[0]), Math.abs(P0 - edges[1]), Math.abs(Pn - edges[0]), Math.abs(Pn - edges[1])) / Math.abs(S);
+        if (sc < bestScore - 1e-6) { bestScore = sc; bestO = o; tie = false; } else if (Math.abs(sc - bestScore) <= 1e-6) tie = true;
+      }
+    }
+    return { items: bestKeep.map((q, i) => ({ idx: bestO + idx0[i], pos: q })), spacing: Math.abs(S), ambiguous: offs.length > 1 && (tie || !edges) , offsets: offs.length, kept: bestKeep.length, total: p.length, rms: f.rms };
+  }
+
+  // Calibrates one axis. spec: {orient:'x'|'y', side, unit, values:[...] in reading order (x: left to right, y: top to bottom),
+  // track: which of the matching label rows/columns to use, 0 = nearest the plot}
+  function calibrateAxis(g, w, h, box, grid, spec) {
+    const vals = spec.values.map(Number).filter(v => isFinite(v));
+    const n = vals.length;
+    const out = { spec, ok: false, reason: '', candidates: [] };
+    if (n < 2) { out.reason = 'The axis needs at least two tick values.'; return out; }
+    const info = labelTracks(g, w, h, box, spec.side);
+    const edges = info.orient === 'x' ? [box.x0, box.x1] : [box.y0, box.y1];
+    const cands = [];
+    info.tracks.forEach((t, ti) => {
+      const pos = t.blobs.map(b => info.orient === 'x' ? b.cx : b.cy);
+      const hintPx = spec.hint ? [spec.hint[0] * (info.orient === 'x' ? w : h), spec.hint[1] * (info.orient === 'x' ? w : h)] : null;
+      const m = matchLabels(pos, n, edges, info.orient, hintPx);
+      if (!m) return;
+      const need = n <= 3 ? n : Math.ceil(n * 0.6);
+      if (m.items.length < need) return;
+      if (m.rms / m.spacing > 0.06) return;
+      cands.push({ ti, m, complete: m.items.length === n ? 0 : 1 });
+    });
+    cands.sort((a, b) => a.complete - b.complete || a.ti - b.ti);
+    // keep nearest-first order among equally complete candidates
+    const topComplete = cands.length ? cands[0].complete : 0;
+    const pool = cands.filter(c => c.complete === topComplete).sort((a, b) => a.ti - b.ti);
+    out.candidates = pool.map(c => ({ track: c.ti, matched: c.m.items.length }));
+    if (!pool.length) { out.reason = 'Could not find a row or column of ' + n + ' evenly spaced tick labels on the ' + spec.side + ' side.'; return out; }
+    const pick = pool[Math.min(spec.track || 0, pool.length - 1)];
+    const items = pick.m.items;
+    const lines = (info.orient === 'x' ? grid.vLines : grid.hLines).map(l => l.pos);
+    const tol = Math.min(4, pick.m.spacing * 0.15);
+    let snapped = 0;
+    const pix = items.map(it => {
+      let bestL = null, bd = 1e9;
+      for (const L of lines) { const d = Math.abs(L - it.pos); if (d < bd) { bd = d; bestL = L; } }
+      if (bestL !== null && bd <= tol) { snapped++; return bestL; }
+      return it.pos;
+    });
+    const vv = items.map(it => vals[it.idx]);
+    const f = fitLinear(pix, vv);
+    if (!f) { out.reason = 'Could not fit the axis.'; return out; }
+    out.ok = true; out.fit = f; out.pix = pix; out.vals = vv; out.snapped = snapped; out.orient = info.orient; out.side = spec.side;
+    out.matched = items.length; out.expected = n; out.idx = items.map(it => it.idx); out.allVals = vals;
+    out.rmsPx = f.rms / Math.abs(f.a);
+    out.spacingPx = pick.m.spacing;
+    out.ambiguous = !!pick.m.ambiguous || (pool.length > 1 && spec.track === undefined);
+    out.trackCount = pool.length;
+    return out;
+  }
+
+  // Cross-checks a primary axis against its secondary (e.g. gpm vs m3/h) across the plot extents
+  function crossCheck(cal1, cal2, p0, p1) {
+    const fac = unitFactor(cal1.spec.unit, cal2.spec.unit);
+    if (fac === null) return { checked: false };
+    const v1a = cal1.fit.a * p0 + cal1.fit.b, v1b = cal1.fit.a * p1 + cal1.fit.b;
+    const v2a = cal2.fit.a * p0 + cal2.fit.b, v2b = cal2.fit.a * p1 + cal2.fit.b;
+    const span1 = (v1b - v1a) * fac, span2 = v2b - v2a;
+    const off1 = v1a * fac, off2 = v2a;
+    const scale = Math.max(Math.abs(span1), 1e-9);
+    const spanErr = Math.abs(span1 - span2) / scale, offErr = Math.abs(off1 - off2) / scale;
+    return { checked: true, spanErr, offErr, ok: spanErr < 0.015 && offErr < 0.015 };
+  }
+
+  // If two axes disagree, try shifting which printed value belongs to which label on `bad` until it matches `good`
+  function repairByCross(bad, good, p0, p1) {
+    if (!bad.idx || !bad.allVals) return null;
+    for (const sh of [0, 1, -1, 2, -2, 3, -3]) {
+      const vv = bad.idx.map(i => bad.allVals[i + sh]);
+      if (vv.some(v => v === undefined)) continue;
+      const f = fitLinear(bad.pix, vv);
+      if (!f) continue;
+      const r = crossCheck(good, { spec: bad.spec, fit: f }, p0, p1);
+      if (r.checked && r.ok) return { fit: f, vals: vv, shift: sh };
+    }
+    return null;
+  }
+
+  return { grayFromRGBA, median, detectGrid, plotBox, cleanGray, findBlobs, fitLinear, polyFit, trackCurve, trimTail, trimBySlope, labelTracks, calibrateAxis, crossCheck, repairByCross, unitFactor, normUnit };
+});
+
+</script>
+<script>
+(function () {
+  'use strict';
+  const C = window.PCCore;
+  const $ = (s, root) => (root || document).querySelector(s);
+  const NS = 'http://www.w3.org/2000/svg';
+
+  /* ------------------------------------------------------------------ units */
+  const FLOW_M3H = { 'gpm': 0.2271247, 'm3/h': 1, 'l/s': 3.6 };
+  const HEAD_M = { 'ft': 0.3048, 'm': 1 };
+  function unitKey(u) { return String(C.normUnit(u) || '').toLowerCase(); }
+  function convertUnit(v, from, to, table) {
+    const f = table[unitKey(from)], t = table[unitKey(to)];
+    if (f === undefined || t === undefined) return v;
+    return v * f / t;
+  }
+  const flowLabel = u => ({ 'gpm': 'gpm', 'm3/h': 'm³/h', 'l/s': 'L/s' }[unitKey(u)] || u);
+  const fmt = (v, d) => (v === null || v === undefined || !isFinite(v)) ? '' : v.toFixed(d);
+
+  /* ------------------------------------------------------------------ state */
+  const state = {
+    file: null, W: 0, H: 0, canvasData: null,
+    gray: null, clean: null, grid: null, box: null,
+    desc: null, axes: [],
+    curves: [], selectedId: null, nextId: 1,
+    samples: [], samplesEdited: false,
+    region: null, selIdx: null, hoverImg: false,
+    mode: null, drag: null, hover: null, hoverCurve: null,
+    out: { flow: 'gpm', head: 'ft', n: 10, q0: null, q1: null },
+    // efficiency: points on the selected head curve where the user types the efficiency (contours), or a traced efficiency curve
+    effPending: null, effPendDrag: false, effMode: 'contours', effCurve: null, effCurvePts: [], effSelIdx: null, effDrag: null,
+    effOut: { n: 10, q0: null, q1: null, output: 'entered', method: 'auto' }
+  };
+  window.__pc = { state, C, apply: () => analyze(), runs: p => computeRuns(p), seedRuns, trimThickness, trimLastGood, bounds, effRows: () => effRows(), effOutputRows: () => effOutputRows(), tsvEff: h => tsvEff(h) };
+
+  const PALETTE = ['#c2185b', '#1565c0', '#2e7d32', '#ef6c00', '#6a1b9a', '#00838f', '#5d4037', '#455a64'];
+
+  /* ------------------------------------------------------------------ helpers */
+  function toast(msg) {
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2200);
+  }
+  function k() { const r = $('#ov').getBoundingClientRect(); return r.width ? state.W / r.width : 1; }   // image px per css px
+  function evPoint(e) {
+    const r = $('#ov').getBoundingClientRect();
+    return { x: (e.clientX - r.left) * state.W / r.width, y: (e.clientY - r.top) * state.H / r.height, cx: e.clientX - r.left, cy: e.clientY - r.top, clientX: e.clientX, clientY: e.clientY };
+  }
+  const isNum = v => typeof v === 'number' && isFinite(v);
+
+  /* ------------------------------------------------------------------ image loading */
+  function loadFile(file) {
+    if (!file || !/^image\//.test(file.type)) { toast('Choose a PNG or JPG image.'); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { state.file = file; setupImage(img); URL.revokeObjectURL(url); };
+    img.onerror = () => toast('That image could not be opened.');
+    img.src = url;
+  }
+
+  function setupImage(img) {
+    resetAnalysis();
+    state.W = img.naturalWidth; state.H = img.naturalHeight;
+    const cv = $('#cv'), ov = $('#ov');
+    cv.width = ov.width = state.W; cv.height = ov.height = state.H;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, state.W, state.H);
+    ctx.drawImage(img, 0, 0);
+    const id = ctx.getImageData(0, 0, state.W, state.H);
+    state.gray = C.grayFromRGBA(id.data, state.W, state.H);
+    state.grid = C.detectGrid(state.gray, state.W, state.H);
+    state.box = C.plotBox(state.grid);
+    state.region = computeRegion();
+    state.clean = (state.grid.hLines.length || state.grid.vLines.length) ? C.cleanGray(state.gray, state.W, state.H, state.grid) : state.gray.slice();
+    state.boxes = maskBoxes(state.clean);
+    $('#drop').hidden = true; $('#viewer').hidden = false;
+    $('#fileInfo').textContent = (state.file ? state.file.name : 'pasted image') + ' · ' + state.W + ' × ' + state.H + ' px';
+    layoutStage();
+    ['stepCurve', 'stepPoints', 'stepEff'].forEach(i => $('#' + i).hidden = true);
+    $('#stepAxes').hidden = false;
+    draw(); renderChecks();
+    // trace the head curves, then ask for the axes
+    setTimeout(() => { analyze(); startCal('flow'); }, 40);
+  }
+
+  function layoutStage() {
+    if (!state.W) return;
+    const avail = $('#stage').clientWidth - 40;
+    const w = Math.max(320, Math.min(avail, state.W * 1.6));
+    $('#wrap').style.width = w + 'px';
+    draw();
+  }
+  window.addEventListener('resize', layoutStage);
+
+  function resetAnalysis() {
+    Object.assign(state, { desc: null, axes: [], xchecks: [], curves: [], selectedId: null, samples: [], samplesEdited: false, selIdx: null, mode: null, drag: null, effCurve: null, effCurvePts: [], effSelIdx: null, effDrag: null, effPending: null, effPendDrag: false });
+    state.out.q0 = state.out.q1 = null; state.effOut.q0 = state.effOut.q1 = null;
+    hideModeUI();
+  }
+
+  /* ------------------------------------------------------------------ analysis pipeline */
+  function analyze() {
+    state.axes = state.axes.filter(a => a.source === 'manual');
+    findHeadCurves();
+    renderAll();
+  }
+
+  function okAxes(q) { return state.axes.filter(a => a.quantity === q && a.cal && a.cal.ok); }
+  function pickAxis(q) {
+    const list = okAxes(q);
+    if (!list.length) return null;
+    const score = a => (a.source === 'manual' ? -100 : 0) + (a.cal.ambiguous ? 5 : 0) + (a.cal.rmsPx || 0) + (1 - (a.cal.snapped || 0) / Math.max(1, a.cal.matched || 1)) * 2 + (a.cal.matched < a.cal.expected ? 1.5 : 0);
+    return list.slice().sort((a, b) => score(a) - score(b))[0];
+  }
+
+  function seedsInColumn(g, x, y0, y1, thr) {
+    const out = []; let start = -1;
+    for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(state.H - 1, Math.ceil(y1)) + 1; y++) {
+      const on = y <= y1 && g[y * state.W + x] < thr;
+      if (on && start < 0) start = y;
+      if (!on && start >= 0) {
+        let by = start, bv = 999;
+        for (let t = start; t < y; t++) if (g[t * state.W + x] < bv) { bv = g[t * state.W + x]; by = t; }
+        out.push({ x, y: (by + (start + y - 1) / 2) / 2 }); start = -1;
+      }
+    }
+    return out;
+  }
+
+  // Longest dark run along a grid line (tolerating small breaks): where the grid itself starts and ends
+  function lineSpan(pos, horiz) {
+    const g = state.gray, W = state.W, H = state.H, p = Math.round(pos), n = horiz ? W : H;
+    let bs = 0, be = 0, cs = -1, gap = 0;
+    for (let i = 0; i < n; i++) {
+      let v = 255;
+      for (let d = -1; d <= 1; d++) { const q = p + d; if (q < 0 || q >= (horiz ? H : W)) continue; const t = horiz ? g[q * W + i] : g[i * W + q]; if (t < v) v = t; }
+      if (v < 215) { if (cs < 0) cs = i; gap = 0; if (i - cs > be - bs) { bs = cs; be = i; } }
+      else if (cs >= 0 && ++gap > 4) cs = -1;
+    }
+    return [bs, be];
+  }
+  function median(a) { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; }
+  // Label boxes ("1000", "Rated", "MCSF") sit on top of curves. Find thin rectangular outlines and blank them, so a curve
+  // visibly ends at the box (or continues past it) instead of running into the lettering.
+  function maskBoxes(img) {
+    const W = state.W, H = state.H, vr = [], src = state.gray;   // detect on the original: grid cleaning removes bold lines a box edge may lie on
+    for (let x = 1; x < W - 1; x++) {
+      let st = -1;
+      for (let y = 0; y <= H; y++) {
+        const on = y < H && src[y * W + x] < 175;
+        if (on && st < 0) st = y;
+        if (!on && st >= 0) { const L = y - st; if (L >= 11 && L <= 34) vr.push({ x, y0: st, y1: y - 1 }); st = -1; }
+      }
+    }
+    // a box has two vertical sides of equal height and rows of ink along its top and bottom (these may be part of a bold grid line)
+    const byX = {}; vr.forEach(r => { (byX[r.x] = byX[r.x] || []).push(r); });
+    const rowDark = (y, xa, xb) => { let c = 0; for (let x = xa; x <= xb; x++) { let d = false; for (let dy = -1; dy <= 1; dy++) if (src[(y + dy) * W + x] < 175) d = true; if (d) c++; } return c / (xb - xa + 1); };
+    let n = 0;
+    for (const r of vr) {
+      for (let dx = 18; dx <= 160; dx++) {
+        const cand = byX[r.x + dx]; if (!cand) continue;
+        const m = cand.find(q => Math.abs(q.y0 - r.y0) <= 2 && Math.abs(q.y1 - r.y1) <= 2);
+        if (!m) continue;
+        if (rowDark(r.y0, r.x, r.x + dx) >= 0.9 && rowDark(r.y1, r.x, r.x + dx) >= 0.9) {
+          // a label box has lettering inside it on a pale ground; an empty grid cell or a block of curves is not one
+          let dk = 0, lt = 0, tot = 0;
+          for (let y = r.y0 + 2; y <= r.y1 - 2; y++) for (let x = r.x + 2; x <= r.x + dx - 2; x++) { const v = src[y * W + x]; tot++; if (v < 140) dk++; else if (v > 200) lt++; }
+          if (!tot || dk / tot < 0.03 || dk / tot > 0.4 || lt / tot < 0.5) continue;
+          for (let y = r.y0 - 1; y <= r.y1 + 1; y++) for (let x = r.x - 1; x <= r.x + dx + 1; x++) img[y * W + x] = 255;
+          n++; break;
+        }
+      }
+    }
+    return n;
+  }
+
+  function computeRegion() {
+    const g = state.grid, W = state.W, H = state.H;
+    const strong = lines => { if (!lines.length) return []; const mx = Math.max(...lines.map(l => l.frac)); const v = lines.filter(l => l.frac >= 0.7 * mx); const step = Math.max(1, Math.floor(v.length / 40)); return v.filter((_, i) => i % step === 0).map(l => l.pos); };
+    const hs = strong(g.hLines), vs = strong(g.vLines);
+    if (hs.length < 3 || vs.length < 3) return { x0: W * 0.05, x1: W * 0.97, y0: H * 0.03, y1: H * 0.97 };
+    const hspans = hs.map(p => lineSpan(p, true)), vspans = vs.map(p => lineSpan(p, false));
+    const R = { x0: median(hspans.map(s => s[0])), x1: median(hspans.map(s => s[1])), y0: median(vspans.map(s => s[0])), y1: median(vspans.map(s => s[1])) };
+    if (R.x1 - R.x0 < W * 0.3 || R.y1 - R.y0 < H * 0.2) return { x0: W * 0.05, x1: W * 0.97, y0: H * 0.03, y1: H * 0.97 };
+    // the regular grid's first column is a better left edge than a line that merely starts early (axis spines, labels)
+    const bx = state.box; if (bx && bx.x0 > R.x0 && bx.x0 < R.x0 + 60) R.x0 = bx.x0;
+    // the y-axis is the leftmost of the strong vertical lines
+    const vmax = Math.max(...g.vLines.map(l => l.frac)), strongV = g.vLines.filter(l => l.frac >= 0.7 * vmax).map(l => l.pos);
+    if (strongV.length) { const lv = Math.min(...strongV); if (lv <= R.x0 + 70 && lv < W * 0.4) R.x0 = lv; }
+    // keep the other plausible left edges too: which one is right is decided by where curves actually start
+    { const cs = [R.x0], lv8 = g.vLines.filter(l => l.frac >= 0.8 * vmax).map(l => l.pos), bx2 = state.box ? state.box.x0 : null;
+      if (strongV.length) cs.push(Math.min(...strongV)); if (lv8.length) cs.push(Math.min(...lv8)); if (bx2 !== null) cs.push(bx2);
+      const u = []; cs.filter(v => v > W * 0.02 && v < W * 0.4).sort((a, b) => a - b).forEach(v => { if (!u.length || v - u[u.length - 1] > 8) u.push(v); });
+      R.leftCands = u.length ? u : [R.x0]; }
+    const rv = strongV.length ? Math.max(...strongV) : 0;
+    R.xr = rv > R.x0 + 0.4 * W ? rv : null;   // right border of the grid, if it has one
+    return R;
+  }
+
+  // tracking limits: from the left edge of the grid to the right edge of the image (grids can be broken or dashed, curves can run past them)
+  function bounds() { const R = state.region; return { x0: R.x0, x1: state.W - 3, y0: 3, y1: state.H - 3 }; }
+
+  // After a curve ends, the tracker can slide onto a lighter line (a contour, a grid line): cut where the ink under the track
+  // turns persistently lighter than the curve's own stroke
+  function trimLight(pts) {
+    const n = pts.length; if (n < 80) return pts;
+    const g = state.clean, W = state.W, H = state.H;
+    const sup = pts.map(p => { const x = Math.round(p.x), y = Math.round(p.y); let m = 255; for (let d = -1; d <= 1; d++) { const yy = y + d; if (yy >= 0 && yy < H && x >= 0 && x < W && g[yy * W + x] < m) m = g[yy * W + x]; } return m; });
+    const head = sup.slice(0, Math.max(30, Math.floor(n * 0.4))).sort((a, b) => a - b), base = head[head.length >> 1];
+    const lim = base + 38, win = 14;
+    let run = 0;
+    for (let i = Math.floor(n * 0.3); i < n; i++) {
+      let s = 0, c = 0; for (let j = Math.max(0, i - win + 1); j <= i; j++) { s += sup[j]; c++; }
+      if (s / c > lim) { run++; if (run >= 10) return pts.slice(0, Math.max(40, i - run - win + 2)); } else run = 0;
+    }
+    return pts;
+  }
+
+  // Beyond a curve's end the tracker latches onto lettering (stroke much taller than the curve) or onto a thin grid line
+  // (much thinner). A crossing makes only a short bad stretch; an overshoot stays bad until the track ends. Cut there.
+  // stroke thickness under each track point: the vertical ink run, corrected for slope
+  function computeRuns(pts) {
+    const n = pts.length, g = state.clean, W = state.W, H = state.H;
+    return pts.map((p, i) => {
+      const x = Math.round(p.x), y = Math.round(p.y);
+      if (x < 0 || x >= W || y < 0 || y >= H) return 0;
+      let a = y, b = y;
+      while (a > 0 && g[(a - 1) * W + x] < 150 && y - a < 30) a--;
+      while (b < H - 1 && g[(b + 1) * W + x] < 150 && b - y < 30) b++;
+      const j = Math.min(n - 1, i + 3), k = Math.max(0, i - 3);
+      const sl = Math.abs((pts[j].y - pts[k].y) / ((pts[j].x - pts[k].x) || 1));
+      return (b - a + 1) / (1 + sl);
+    });
+  }
+  function trimThickness(pts) {
+    const n = pts.length; if (n < 60) return pts;
+    const g = state.clean, W = state.W, H = state.H;
+    const run = computeRuns(pts);
+    const sup = pts.map(p => { const x = Math.round(p.x), y = Math.round(p.y); let m = 255; for (let d = -1; d <= 1; d++) { const yy = y + d; if (yy >= 0 && yy < H && x >= 0 && x < W && g[yy * W + x] < m) m = g[yy * W + x]; } return m; });
+    const head = run.slice(0, Math.floor(n * 0.5)).sort((x, y) => x - y);
+    const base = Math.max(1.5, head[head.length >> 1]);
+    const hv = sup.slice(0, Math.floor(n * 0.5)).sort((x, y) => x - y), baseV = hv[hv.length >> 1];
+    const hi = Math.max(base * 1.9, base + 3.5);
+    const bad = run.map((r, i) => (sup[i] > baseV + 55 || (r > hi && sup[i] > baseV + 25) || (base >= 2.5 && r < base * 0.7)) ? 1 : 0);
+    const suf = new Array(n + 1).fill(0);
+    for (let i = n - 1; i >= 0; i--) suf[i] = suf[i + 1] + bad[i];
+    for (let i = Math.floor(n * 0.5); i < n - 5; i++) if (bad[i] && suf[i] / (n - i) >= 0.8) return pts.slice(0, Math.max(40, i));
+    return pts;
+  }
+
+  // The curve's own stroke (dark, as thick as the rest of the curve) ends where such stretches stop occurring.
+  // Whatever the tracker found after the last such stretch belongs to some other line.
+  function trimLastGood(pts) {
+    const n = pts.length; if (n < 80) return pts;
+    const g = state.clean, W = state.W, H = state.H;
+    const run = computeRuns(pts);
+    const sup = pts.map(p => { const x = Math.round(p.x), y = Math.round(p.y); let m = 255; for (let d = -1; d <= 1; d++) { const yy = y + d; if (yy >= 0 && yy < H && x >= 0 && x < W && g[yy * W + x] < m) m = g[yy * W + x]; } return m; });
+    const hr = run.slice(0, Math.floor(n * 0.5)).sort((a, b) => a - b), base = Math.max(1.5, hr[hr.length >> 1]);
+    const hv = sup.slice(0, Math.floor(n * 0.5)).sort((a, b) => a - b), baseV = hv[hv.length >> 1];
+    const good = run.map((r, i) => (r >= base * 0.7 && sup[i] <= baseV + 42 && (r <= Math.max(base * 2.2, base + 4) || sup[i] <= baseV + 15)) ? 1 : 0);
+    const win = 12; let cs = 0; const pre = [0]; good.forEach(v => { cs += v; pre.push(cs); });
+    let last = -1;
+    for (let e = win - 1; e < n; e++) if ((pre[e + 1] - pre[e + 1 - win]) / win >= 0.65) last = e;
+    let end = (last < 0 || last >= n - 6) ? n : Math.max(40, Math.max(last, Math.floor(n * 0.4)));
+    while (end > 60 && !good[end - 1]) end--;   // never finish on a faint, thin or lettered point
+    return end === n ? pts : pts.slice(0, end);
+  }
+
+  function traceFrom(seed, opts) {
+    const g = state.clean, W = state.W, H = state.H, box = bounds();
+    const R = C.trackCurve(g, W, H, seed, 1, box, Object.assign({ maxGap: 25 }, opts));
+    const xr = state.region.xr, Rt0 = trimLastGood(trimThickness(C.trimBySlope(C.trimTail(R)))), Rt = xr ? Rt0.filter(p => p.x <= xr + 1) : Rt0;   // nothing beyond the grid's right border
+    const L = C.trackCurve(g, W, H, seed, -1, box, Object.assign({ bridge: !!(opts && opts.bridgeLeft) }, opts, { maxGap: 10 }));   // left of a seed is normally just the run down to the axis
+    let pts = L.slice(0, -1).concat(Rt);
+    pts = pts.filter(p => p.x >= box.x0 && p.x <= box.x1 + 1);
+    return pts;
+  }
+
+  function yAt(pts, x) {
+    if (!pts.length || x < pts[0].x - 0.5 || x > pts[pts.length - 1].x + 0.5) return null;
+    let lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pts[m].x <= x) lo = m; else hi = m; }
+    const a = pts[lo], b = pts[hi];
+    if (b.x === a.x) return a.y;
+    return a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x);
+  }
+
+  function dedupeTracks(list) {
+    // darker and longer tracks win; a track that mostly lies on top of an already kept one is a duplicate (or a tail that slid onto another line)
+    list.forEach(t => { if (t.dv === undefined) t.dv = trackDark(t.pts); });
+    const minDv = Math.min(...list.map(t => t.dv));
+    list.sort((a, b) => ((a.dv <= minDv + 35) === (b.dv <= minDv + 35) ? b.pts.length - a.pts.length : (a.dv <= minDv + 35 ? -1 : 1)));
+    const kept = [];
+    for (const t of list) {
+      let dup = false;
+      for (const u of kept) {
+        let on = 0, n = 0;
+        for (let i = 0; i < t.pts.length; i += 4) { const p = t.pts[i], y = yAt(u.pts, p.x); if (y === null) continue; n++; if (Math.abs(y - p.y) < 2.8) on++; }
+        if (n >= 8 && on / n > 0.4) { dup = true; break; }
+      }
+      if (!dup) kept.push(t);
+    }
+    return kept;
+  }
+
+  // Dark strokes crossing a column: thick enough to be a curve rather than a thin grid line or hairline
+  function seedRuns(g, x, y0, y1) {
+    const W = state.W, H = state.H, out = [];
+    let start = -1, minv = 999;
+    for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(H - 1, Math.ceil(y1)) + 1; y++) {
+      const v = y <= y1 && y < H ? g[y * W + x] : 255;
+      if (v < 115) { if (start < 0) { start = y; minv = 999; } if (v < minv) minv = v; }
+      else if (start >= 0) {
+        const th = y - start;
+        if (th >= 2 && th <= 10 && minv < 80) out.push({ x, y: (start + y - 1) / 2, thick: th, core: minv });
+        start = -1;
+      }
+    }
+    return out;
+  }
+
+  function isGridLike(pts, hl) {
+    if (pts.length < 80) return false;
+    let mn = 1e9, mx = -1e9, near = 0;
+    for (const p of pts) { if (p.y < mn) mn = p.y; if (p.y > mx) mx = p.y; for (const h of hl) if (Math.abs(h - p.y) < 2.2) { near++; break; } }
+    if (mx - mn >= 5.5) return false;
+    const sp = hl.length > 1 ? (hl[hl.length - 1] - hl[0]) / (hl.length - 1) : 99;
+    return sp < 9 || near / pts.length > 0.75;   // a flat track on a dense or matching grid is a grid line, not a curve
+  }
+
+  function trackDark(pts) {
+    const g = state.clean, W = state.W, H = state.H, v = [];
+    for (let i = 0; i < pts.length; i += 3) {
+      const x = Math.round(pts[i].x), y = Math.round(pts[i].y); let m = 255;
+      for (let dy = -2; dy <= 2; dy++) { const yy = y + dy; if (yy >= 0 && yy < H && x >= 0 && x < W && g[yy * W + x] < m) m = g[yy * W + x]; }
+      v.push(m);
+    }
+    v.sort((a, b) => a - b); return v[v.length >> 1];
+  }
+
+  // A curve that ends can leave the tracker sliding along a grid line: cut the flat tail that lies on one line
+  function trimGridTail(pts, hl) {
+    const n = pts.length; if (n < 60) return pts;
+    let best = null;
+    for (const h of hl) {
+      let k = n - 1;
+      while (k > 0 && Math.abs(pts[k].y - h) < 2.0) k--;
+      const len = n - 1 - k;
+      if (len >= 25 && (!best || len > best.len)) best = { k, len };
+    }
+    return best ? pts.slice(0, best.k + 1) : pts;
+  }
+  // RMS distance of a track from a smooth cubic: hand-lettering and contour fragments wander, real curves do not
+  function roughness(pts) {
+    if (pts.length < 30) return 99;
+    const x0 = pts[0].x, xr = pts[pts.length - 1].x - x0 || 1;
+    const step = Math.max(1, Math.floor(pts.length / 200)), xs = [], ys = [];
+    for (let i = 0; i < pts.length; i += step) { xs.push((pts[i].x - x0) / xr - 1); ys.push(pts[i].y); }
+    const f = C.polyFit(xs, ys, 3); if (!f) return 99;
+    let ss = 0; for (let i = 0; i < xs.length; i++) { const e = f(xs[i]) - ys[i]; ss += e * e; }
+    return Math.sqrt(ss / xs.length);
+  }
+
+  // Finds every long, smooth, dark curve in the chart by tracing from seeds across the whole width
+  function findTracks(yr) {
+    const g = state.clean, R = state.region;
+    const hl = state.grid.hLines.map(l => l.pos), vl = state.grid.vLines.map(l => l.pos);
+    const found = [], rejected = [];
+    const minLen = Math.max(60, (state.W - R.x0) * 0.2);
+    const y0 = yr ? yr[0] : 3, y1 = yr ? yr[1] : state.H - 3;
+    const covered = s => found.concat(rejected).some(t => { const yy = yAt(t.pts, s.x); return yy !== null && Math.abs(yy - s.y) < 3; });
+    // curves of a pump chart start at zero flow, i.e. at the left edge of the grid. Where exactly that edge is can be unclear
+    // (axis spines, labels), so seed a band of columns and keep the curves that agree on one common starting column.
+    const cand = [];
+    for (let dx = 4; dx <= 100; dx += 6) {
+      const x = Math.round(R.x0) + dx;
+      if (x >= state.W - 5) break;
+      if (vl.some(v => Math.abs(v - x) < 2.2)) continue;
+      for (const s of seedRuns(g, x, y0, y1)) {
+        if (covered(s)) continue;
+        let pts = traceFrom(s);
+        if (pts.length < minLen) continue;
+        if (isGridLike(pts, hl)) { rejected.push({ pts }); continue; }
+        pts = trimGridTail(pts, hl);
+        if (pts.length < minLen) continue;
+        if (roughness(pts.slice(0, Math.floor(pts.length * 0.6))) > 2.6) { rejected.push({ pts }); continue; }
+        { let mn = 1e9, mx = -1e9; pts.forEach(q => { if (q.y < mn) mn = q.y; if (q.y > mx) mx = q.y; }); if (mx - mn < 10 && pts.length > 250) { rejected.push({ pts }); continue; } }
+        { const edge = pts.filter(q => q.y < 14 || q.y > state.H - 14).length; if (edge > pts.length * 0.5) { rejected.push({ pts }); continue; } }
+        found.push({ pts });
+      }
+    }
+    if (found.length) {
+      const starts = found.map(t => t.pts[0].x).sort((a, b) => a - b);
+      let best = null;
+      starts.forEach(x => { const n = starts.filter(v => Math.abs(v - x) <= 10).length; if (!best || n > best.n || (n === best.n && x > best.x)) best = { x, n }; });
+      for (let i = found.length - 1; i >= 0; i--) if (Math.abs(found[i].pts[0].x - best.x) > 12) found.splice(i, 1);
+    }
+    return dedupeTracks(found);
+  }
+
+  function findHeadCurves() {
+    const manual = state.curves.filter(c => c.manual);
+    state.curves = [];
+    if (!state.region) { state.curves = manual; return; }
+    const hx = pickAxis('head');
+    let yr = null;
+    if (hx && hx.source === 'auto' && hx.cal.pix && hx.cal.pix.length > 3) {
+      const mn = Math.min(...hx.cal.pix), mx = Math.max(...hx.cal.pix), sp = hx.cal.spacingPx || 30;
+      yr = [mn - sp * 1.2, mx + sp * 0.5];
+    }
+    // try each plausible left edge; the right one is where the falling curves actually begin
+    let bestL = null;
+    for (const cx of (state.region.leftCands || [state.region.x0])) {
+      state.region.x0 = cx;
+      const tt = findTracks(yr), sc = tt.filter(q => q.pts[0].x <= cx + 4 && q.pts[q.pts.length - 1].y - q.pts[0].y > 6).length;
+      if (!bestL || sc > bestL.sc) bestL = { cx, tt, sc };
+    }
+    state.region.x0 = bestL.cx;
+    const tracks = bestL.tt;
+    tracks.forEach(t => { t.dv = trackDark(t.pts); const r = computeRuns(t.pts).sort((a, b) => a - b); t.th = r[r.length >> 1]; });
+    const minDv = tracks.length ? Math.min(...tracks.map(t => t.dv)) : 0;
+    const ths = tracks.map(t => t.th).sort((a, b) => a - b), refTh = ths.length ? ths[Math.floor(ths.length * 0.75)] : 0;
+    tracks.forEach(t => { t.dark = t.dv <= minDv + 45 && t.th >= 0.5 * refTh; });
+    // the head curves of one family do not cross each other: a 'curve' that crosses several others is a contour or lettering
+    { const cand = tracks.filter(t => t.dark && t.pts[t.pts.length - 1].y - t.pts[0].y > 6);
+      if (cand.length >= 4) {
+        const crosses = (a, b) => { const x0 = Math.max(a.pts[0].x, b.pts[0].x), x1 = Math.min(a.pts[a.pts.length - 1].x, b.pts[b.pts.length - 1].x); let last = 0, n = 0; for (let x = x0; x <= x1; x += 4) { const ya = yAt(a.pts, x), yb = yAt(b.pts, x); if (ya === null || yb === null) continue; const d = ya - yb; if (Math.abs(d) < 3) continue; const sg = d > 0 ? 1 : -1; if (last && sg !== last) n++; last = sg; } return n > 0; };
+        cand.forEach(t => { t.cx = cand.filter(u => u !== t && crosses(t, u)).length; });
+        cand.forEach(t => { if (t.cx >= 2) t.dark = false; });
+      } }
+    const darkT = tracks.filter(t => t.dark);
+    if (tracks.length) {
+      const xr = (darkT.length ? Math.max(...darkT.map(t => t.pts[0].x)) : Math.max(...tracks.map(t => t.pts[0].x))) + 2;
+      tracks.sort((a, b) => (yAt(a.pts, xr) ?? 1e9) - (yAt(b.pts, xr) ?? 1e9));
+    }
+    const labels = ((state.desc && state.desc.head_curves) || []).slice().sort((a, b) => (b.value ?? -1e9) - (a.value ?? -1e9));
+    let di = 0;
+    tracks.forEach(t => {
+      let lab = '';
+      if (t.dark) { if (labels.length === darkT.length) lab = labels[di].label || (labels[di].value !== null && labels[di].value !== undefined ? String(labels[di].value) : ''); di++; }
+      state.curves.push({ id: state.nextId++, pts: t.pts, label: lab, auto: true, dark: t.dark });
+    });
+    state.curves = state.curves.concat(manual);
+    state.curves = headCandidates();   // only curves that fall as flow rises are identified in this version
+    const hc = state.curves;
+    if (hc.length === 1) state.selectedId = hc[0].id;
+    else if (!hc.some(c => c.id === state.selectedId)) state.selectedId = null;
+    state.samplesEdited = false; state.selIdx = null;
+    rebuildSamples(true);
+  }
+  function headCandidates() {
+    const falling = c => { const a = c.pts[0], b = c.pts[c.pts.length - 1]; return b.y - a.y > Math.max(18, 0.025 * state.H); };
+    let d = state.curves.filter(c => c.manual || (c.dark && falling(c)));
+    if (!d.length) d = state.curves.filter(c => c.dark || c.manual);
+    return d.length ? d : state.curves;
+  }
+
+  /* ------------------------------------------------------------------ sampling */
+  function seriesOf(pts) {
+    const x0 = Math.ceil(pts[0].x), x1 = Math.floor(pts[pts.length - 1].x);
+    const n = x1 - x0 + 1; if (n < 3) return null;
+    const raw = new Float64Array(n);
+    for (let i = 0; i < n; i++) raw[i] = yAt(pts, x0 + i);
+    const sm = new Float64Array(n), hw = 4;
+    for (let i = 0; i < n; i++) { let s = 0, c = 0; for (let j = Math.max(0, i - hw); j <= Math.min(n - 1, i + hw); j++) { s += raw[j]; c++; } sm[i] = s / c; }
+    // keep the true ends (a moving average pulls them inward)
+    for (let i = 0; i < hw; i++) { const t = i / hw; sm[i] = raw[i] * (1 - t) + sm[i] * t; sm[n - 1 - i] = raw[n - 1 - i] * (1 - t) + sm[n - 1 - i] * t; }
+    return { x0, x1, y: sm };
+  }
+  function serY(s, x) {
+    if (!s) return null;
+    if (x < s.x0 && x >= s.x0 - 8) x = s.x0; else if (x > s.x1 && x <= s.x1 + 8) x = s.x1;
+    if (x < s.x0 || x > s.x1) return null;
+    const f = x - s.x0, i = Math.floor(f), t = f - i;
+    return i + 1 < s.y.length ? s.y[i] * (1 - t) + s.y[i + 1] * t : s.y[i];
+  }
+  // y of the centre of the stroke at column x, near the given y (only when it is one clean stroke, not a crossing or a block of ink)
+  function snapToInk(x, y) {
+    const g = state.clean, W = state.W, H = state.H, xi = Math.round(x), yi = Math.round(y);
+    if (xi < 0 || xi >= W) return y;
+    for (let d = 0; d <= 4; d++) for (const yy of (d ? [yi - d, yi + d] : [yi])) {
+      if (yy < 1 || yy >= H - 1 || g[yy * W + xi] >= 140) continue;
+      let a = yy, b = yy, sw = 0, swy = 0;
+      while (a > 0 && g[(a - 1) * W + xi] < 140 && yy - a < 20) a--;
+      while (b < H - 1 && g[(b + 1) * W + xi] < 140 && b - yy < 20) b++;
+      if (b - a + 1 > 12) return y;
+      for (let t = a; t <= b; t++) { const wgt = 160 - g[t * W + xi]; sw += wgt; swy += wgt * t; }
+      return sw > 0 ? swy / sw : (a + b) / 2;
+    }
+    return y;
+  }
+
+  // monotone cubic through points (Fritsch-Carlson / Butland): a smooth line that passes through every point without overshooting
+  function pchip(xs, ys) {
+    const n = xs.length, h = [], d = [], m = new Array(n).fill(0);
+    for (let i = 0; i < n - 1; i++) { h[i] = xs[i + 1] - xs[i]; d[i] = (ys[i + 1] - ys[i]) / h[i]; }
+    if (n === 2) { m[0] = m[1] = d[0]; }
+    else {
+      for (let i = 1; i < n - 1; i++) { if (d[i - 1] * d[i] <= 0) m[i] = 0; else { const w1 = 2 * h[i] + h[i - 1], w2 = h[i] + 2 * h[i - 1]; m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]); } }
+      const end = (h0, h1, d0, d1) => { let m0 = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1); if (Math.sign(m0) !== Math.sign(d0)) m0 = 0; else if (Math.sign(d0) !== Math.sign(d1) && Math.abs(m0) > 3 * Math.abs(d0)) m0 = 3 * d0; return m0; };
+      m[0] = end(h[0], h[1], d[0], d[1]); m[n - 1] = end(h[n - 2], h[n - 3], d[n - 2], d[n - 3]);
+    }
+    return x => {
+      if (x <= xs[0]) return ys[0]; if (x >= xs[n - 1]) return ys[n - 1];
+      let lo = 0, hi = n - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (xs[mid] <= x) lo = mid; else hi = mid; }
+      const t = (x - xs[lo]) / h[lo], t2 = t * t, t3 = t2 * t;
+      return (2 * t3 - 3 * t2 + 1) * ys[lo] + (t3 - 2 * t2 + t) * h[lo] * m[lo] + (-2 * t3 + 3 * t2) * ys[hi] + (t3 - t2) * h[lo] * m[hi];
+    };
+  }
+
+  // the curve after the user moved points: a smooth line through those points (the traced curve is kept outside their range)
+  function editedSeries(c) {
+    const base = c.series || (c.series = seriesOf(c.pts));
+    const pts = []; (c.userPts || []).forEach(p => { if (!pts.length || p.x - pts[pts.length - 1].x > 0.75) pts.push(p); });
+    if (pts.length < 2 || !base) return base;
+    const f = pchip(pts.map(p => p.x), pts.map(p => p.y)), xa = Math.ceil(pts[0].x), xb = Math.floor(pts[pts.length - 1].x);
+    const x0 = Math.min(base.x0, xa), x1 = Math.max(base.x1, xb), y = new Float64Array(x1 - x0 + 1);
+    for (let x = x0; x <= x1; x++) {
+      if (x >= xa && x <= xb) y[x - x0] = f(x);
+      else { const v = serY(base, x); y[x - x0] = v !== null ? v : (x < xa ? pts[0].y : pts[pts.length - 1].y); }
+    }
+    return { x0, x1, y };
+  }
+
+  // keep what the user did to the points with the curve, so it is still there after looking at another curve
+  function commitEdits() {
+    const c = selectedCurve(); if (!c || !state.samples.length) return;
+    c.edited = true; c.editSeries = null;
+    c.userPts = state.samples.filter(p => p.y !== null).map(p => ({ x: p.x, y: p.y })).sort((a, b) => a.x - b.x);
+    state.out.n = state.samples.length; state.samplesEdited = true;
+    c.saved = { samples: state.samples.map(p => ({ x: p.x, y: p.y })), n: state.out.n, q0: state.out.q0, q1: state.out.q1 };
+  }
+  function resetCurveEdits() {
+    const c = selectedCurve(); if (!c) return;
+    c.edited = false; c.userPts = null; c.saved = null; c.editSeries = null; state.out.q0 = state.out.q1 = null; state.selIdx = null;
+    rebuildSamples(true); renderAll();
+  }
+
+  function selectedCurve() { return state.curves.find(c => c.id === state.selectedId) || null; }
+  function selSeries() { const c = selectedCurve(); if (!c) return null; if (!c.series) c.series = seriesOf(c.pts); if (c.edited && c.userPts && c.userPts.length >= 2) { if (!c.editSeries) c.editSeries = editedSeries(c); return c.editSeries; } return c.series; }
+  // flow <-> pixel in the chosen output unit
+  function flowAxis() { return pickAxis('flow'); }
+  function headAxis() { return pickAxis('head'); }
+  function pxToFlow(px) { const a = flowAxis(); if (!a) return null; let v = a.cal.fit.a * px + a.cal.fit.b; const full = Math.abs(a.cal.fit.a * (state.box ? state.box.x1 : px) + a.cal.fit.b); if (v < 0 && v > -0.02 * full) v = 0; return convertUnit(v, a.unit, state.out.flow, FLOW_M3H); }
+  function flowToPx(v) { const a = flowAxis(); if (!a) return null; const vm = convertUnit(v, state.out.flow, a.unit, FLOW_M3H); return (vm - a.cal.fit.b) / a.cal.fit.a; }
+  function pyToHead(py) { const a = headAxis(); if (!a) return null; return convertUnit(a.cal.fit.a * py + a.cal.fit.b, a.unit, state.out.head, HEAD_M); }
+
+  function rebuildSamples(reset) {
+    const s = selSeries();
+    if (!s) { state.samples = []; return; }
+    if (reset) { state.out.q0 = null; state.out.q1 = null; }
+    const R0 = state.region ? state.region.x0 : s.x0;
+    let x0 = (s.x0 - R0 >= 0 && s.x0 - R0 <= 6) ? R0 : Math.max(s.x0, R0), x1 = s.x1;   // a curve that begins at the axis begins at zero flow
+    const lo = x0, hi = x1;
+    if (state.out.q0 !== null) { const p = flowToPx(state.out.q0); if (p !== null) x0 = Math.max(lo, Math.min(hi, p)); }
+    if (state.out.q1 !== null) { const p = flowToPx(state.out.q1); if (p !== null) x1 = Math.max(lo, Math.min(hi, p)); }
+    if (x1 < x0) [x0, x1] = [x1, x0];
+    const n = Math.max(2, Math.min(60, state.out.n | 0));
+    state.samples = [];
+    const c0 = selectedCurve(), edited = !!(c0 && c0.edited);
+    for (let i = 0; i < n; i++) {
+      const x = x0 + (x1 - x0) * i / (n - 1);
+      let y = serY(s, x);
+      if (y !== null && !edited) y = snapToInk(x, y);
+      state.samples.push({ x, y });
+    }
+    state.samplesEdited = false;
+    if (edited) commitEdits();
+  }
+
+  function sampleRows() {
+    return state.samples.slice().sort((a, b) => a.x - b.x).map(p => {
+      let q = pxToFlow(p.x); const h = pyToHead(p.y);
+      if (q !== null && Math.abs(q) < 0.004 * Math.abs(pxToFlow(state.W))) q = 0;   // the curve starts on the axis: zero flow, not a pixel of rounding
+      return { q, h };
+    });
+  }
+
+  /* ------------------------------------------------------------------ rendering: rail */
+  function renderAll() {
+    renderChecks(); renderCurves(); renderPoints(); renderEff(); draw();
+  }
+
+  function checkItem(level, title, detail, actions) {
+    const li = document.createElement('li'); li.className = 'check ' + level;
+    const ic = document.createElement('span'); ic.className = 'ic'; ic.textContent = level === 'ok' ? '✓' : (level === 'warn' ? '!' : '×');
+    const body = document.createElement('div');
+    const b = document.createElement('b'); b.textContent = title; body.appendChild(b);
+    if (detail) { body.appendChild(document.createTextNode(' ' + detail)); }
+    if (actions && actions.length) {
+      const acts = document.createElement('div'); acts.className = 'acts';
+      actions.forEach(a => { const btn = document.createElement('button'); btn.className = 'btn sm'; btn.textContent = a.label; btn.addEventListener('click', a.fn); acts.appendChild(btn); });
+      body.appendChild(acts);
+    }
+    li.appendChild(ic); li.appendChild(body); return li;
+  }
+
+  function axisCheck(q, title, kind) {
+    const a = pickAxis(q);
+    if (!a) return checkItem('warn', title + ' not calibrated.', 'Click two ticks on it and type their values.', [{ label: 'Calibrate', fn: () => startCal(kind) }]);
+    const unit = q === 'flow' ? flowLabel(a.unit) : a.unit;
+    return checkItem('ok', title + ' calibrated', 'in ' + unit + '.', [{ label: 'Redo', fn: () => startCal(kind) }]);
+  }
+
+  function renderChecks() {
+    const ul = $('#checks'); ul.innerHTML = '';
+    ul.appendChild(axisCheck('flow', 'Flow axis', 'flow'));
+    ul.appendChild(axisCheck('head', 'Head axis', 'head'));
+    const n = headCandidates().length;
+    if (!state.curves.length) ul.appendChild(checkItem('warn', 'No head curve found yet.', 'If the image is loaded, click on a curve and it will be traced from there.', [{ label: 'Click on a curve', fn: () => startSeed('head') }]));
+    else ul.appendChild(checkItem('ok', n + (n === 1 ? ' head curve' : ' head curves') + ' traced.', '', [{ label: 'Add a missed curve', fn: () => startSeed('head') }]));
+  }
+
+  function describeCurve(c) {
+    const a = c.pts[0], b = c.pts[c.pts.length - 1];
+    const q0 = pxToFlow(a.x), q1 = pxToFlow(b.x), h0 = pyToHead(a.y), h1 = pyToHead(b.y);
+    if (q0 === null || h0 === null) return '';
+    return Math.round(q0) + '–' + Math.round(q1) + ' ' + flowLabel(state.out.flow) + ' · ' + fmt(h0, 0) + ' → ' + fmt(h1, 0) + ' ' + state.out.head;
+  }
+
+  function renderCurves() {
+    const sec = $('#stepCurve');
+    if (!state.curves.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    const d = state.desc || {};
+    const cands = headCandidates();
+    const ask = $('#askCurve'), list = $('#curveList');
+    list.innerHTML = '';
+    const opts = ((d.head_curves) || []).slice().sort((a, b) => (b.value ?? -1e9) - (a.value ?? -1e9)).map(c => c.label || String(c.value)).filter(Boolean);
+    const unlabeled = cands.some(c => !c.label);
+    ask.innerHTML = '';
+    if (cands.length > 1 && state.selectedId === null) {
+      ask.hidden = false;
+      const fam = 'Which curve (speed or impeller size) do you want data for?';
+      const p = document.createElement('p'); p.textContent = fam + ' Hover a name to see it on the chart, or click a curve on the chart.'; ask.appendChild(p);
+      const row = document.createElement('div'); row.className = 'row';
+      cands.forEach((c, i) => {
+        const b = document.createElement('button'); b.className = 'btn'; b.textContent = c.label || ('Curve ' + (i + 1));
+        b.style.borderColor = PALETTE[state.curves.indexOf(c) % PALETTE.length];
+        b.addEventListener('click', () => selectCurve(c.id));
+        b.addEventListener('mouseenter', () => { state.hoverCurve = c.id; draw(); });
+        b.addEventListener('mouseleave', () => { state.hoverCurve = null; draw(); });
+        row.appendChild(b);
+      });
+      ask.appendChild(row);
+    } else ask.hidden = true;
+    cands.forEach((c, i) => {
+      const row = document.createElement('div'); row.className = 'curverow' + (c.id === state.selectedId ? ' sel' : '');
+      const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = PALETTE[state.curves.indexOf(c) % PALETTE.length]; row.appendChild(sw);
+      const box = document.createElement('div');
+      if (opts.length && (unlabeled || cands.length !== opts.length)) {
+        const sel = document.createElement('select');
+        const blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Curve ' + (i + 1) + ' (unlabelled)'; sel.appendChild(blank);
+        opts.forEach(o => { const op = document.createElement('option'); op.value = o; op.textContent = o; if (o === c.label) op.selected = true; sel.appendChild(op); });
+        sel.addEventListener('click', e => e.stopPropagation());
+        sel.addEventListener('change', () => { c.label = sel.value; renderCurves(); });
+        box.appendChild(sel);
+      } else { const t = document.createElement('div'); t.textContent = c.label || ('Curve ' + (i + 1)) + (c.manual ? ' (added by hand)' : ''); box.appendChild(t); }
+      const sp = document.createElement('div'); sp.className = 'small'; sp.textContent = describeCurve(c); box.appendChild(sp);
+      row.appendChild(box);
+      row.addEventListener('click', () => selectCurve(c.id));
+      row.addEventListener('mouseenter', () => { state.hoverCurve = c.id; draw(); });
+      row.addEventListener('mouseleave', () => { state.hoverCurve = null; draw(); });
+      list.appendChild(row);
+    });
+    $('#curveCount').textContent = cands.length + (cands.length === 1 ? ' curve' : ' curves') + ' traced';
+  }
+
+  function selectCurve(id) {
+    if (state.effPending) cancelPending();
+    state.selectedId = id; state.selIdx = null; state.effSelIdx = null;
+    const c = selectedCurve();
+    if (c && c.saved) {   // this curve was edited before: show it as the user left it
+      state.samples = c.saved.samples.map(p => ({ x: p.x, y: p.y }));
+      state.out.n = c.saved.n; state.out.q0 = c.saved.q0; state.out.q1 = c.saved.q1; state.samplesEdited = true;
+    } else { state.out.q0 = state.out.q1 = null; rebuildSamples(true); }
+    renderAll();
+  }
+
+  function renderPoints() {
+    const sec = $('#stepPoints');
+    const c = selectedCurve();
+    if (!c || !state.samples.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    $('#outN').value = state.out.n;
+    const s = selSeries();
+    if (s) {
+      $('#outQ0').value = fmt(pxToFlow(state.samples.slice().sort((a, b) => a.x - b.x)[0].x), 1);
+      $('#outQ1').value = fmt(pxToFlow(state.samples.slice().sort((a, b) => a.x - b.x).slice(-1)[0].x), 1);
+    }
+    const rows = sampleRows();
+    const tb = $('#ptsBody'); tb.innerHTML = '';
+    $('#thQ').textContent = 'Flow (' + flowLabel(state.out.flow) + ')';
+    $('#thH').textContent = 'TDH (' + state.out.head + ')';
+    rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      const cells = [String(i + 1), fmt(r.q, Math.abs(r.q) >= 100 ? 0 : 1), fmt(r.h, 1)];
+      cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    $('#btnResetCurve').hidden = !c.edited;
+    $('#ptsNote').textContent = c.edited ? 'You adjusted this curve by hand: the line now passes through your points, and they are kept if you look at another curve. Changing the number of points spaces new ones along your adjusted line.' :
+      '';
+  }
+
+  /* ------------------------------------------------------------------ export */
+  function tsv(headers) {
+    const rows = sampleRows();
+    const lines = [];
+    if (headers) lines.push(['Flow (' + flowLabel(state.out.flow) + ')', 'TDH (' + state.out.head + ')'].join('\t'));
+    rows.forEach(r => lines.push([fmt(r.q, 1), fmt(r.h, 1)].join('\t')));
+    return lines.join('\n');
+  }
+  async function copyExcel(text) {
+    if (typeof text !== 'string') text = tsv($('#optHeaders').checked);
+    try { await navigator.clipboard.writeText(text); toast('Copied. Paste into Excel.'); }
+    catch (e) {
+      const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast('Copied. Paste into Excel.'); } catch (e2) { toast('Copy was blocked by the browser.'); }
+      ta.remove();
+    }
+  }
+  function downloadCsv(text, suffix) {
+    if (typeof text !== 'string') text = tsv($('#optHeaders').checked);
+    text = text.replace(/\t/g, ',');
+    const c = selectedCurve();
+    const name = ((state.file && state.file.name ? state.file.name.replace(/\.[^.]+$/, '') : 'pump-curve') + (c && c.label ? '_' + c.label.replace(/[^\w.-]+/g, '') : '') + (suffix || '') + '.csv');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text + '\n'], { type: 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* ------------------------------------------------------------------ overlay drawing */
+  function draw() {
+    const ov = $('#ov'); if (!ov.width) return;
+    const ctx = ov.getContext('2d'); ctx.clearRect(0, 0, ov.width, ov.height);
+    const K = k(), box = state.region || state.box;
+    // calibration marks
+    if ($('#optCal').checked && box) {
+      [pickAxis('flow'), pickAxis('head')].forEach(a => {
+        if (!a || !a.cal.pix) return;
+        ctx.strokeStyle = 'rgba(0,166,200,.55)'; ctx.fillStyle = '#007f99'; ctx.lineWidth = K; ctx.font = (11 * K) + 'px sans-serif';
+        a.cal.pix.forEach((p, i) => {
+          ctx.beginPath();
+          if (a.orient === 'x') { ctx.moveTo(p, box.y1 - 7 * K); ctx.lineTo(p, box.y1 + 7 * K); ctx.stroke();  }
+          else { const side = a.side === 'right' || (a.cal.spec && a.cal.spec.side === 'right'); const x = side ? box.x1 : box.x0; ctx.moveTo(x - 7 * K, p); ctx.lineTo(x + 7 * K, p); ctx.stroke();  }
+        });
+      });
+    }
+    // curves
+    const cands = headCandidates();
+    state.curves.forEach((c, i) => {
+      const isHead = cands.indexOf(c) >= 0;
+      const sel = c.id === state.selectedId, hov = c.id === state.hoverCurve;
+      const col = PALETTE[i % PALETTE.length];
+      if (!isHead && !hov) { ctx.strokeStyle = '#8a97a1'; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.6 * K; ctx.beginPath(); c.pts.forEach((p, j) => j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.globalAlpha = 1; return; }
+      ctx.strokeStyle = col; ctx.globalAlpha = sel || hov ? 1 : (state.selectedId === null ? 0.9 : 0.45);
+      ctx.lineWidth = (sel || hov ? 3 : 2) * K; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      if (c.edited && sel && c.userPts && c.userPts.length >= 2) { const es = c.editSeries || (c.editSeries = editedSeries(c)); for (let x = es.x0; x <= es.x1; x++) x === es.x0 ? ctx.moveTo(x, es.y[0]) : ctx.lineTo(x, es.y[x - es.x0]); }
+      else c.pts.forEach((p, j) => j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (state.selectedId === null || hov) {
+        const p = c.pts[c.pts.length - 1];
+        const t = c.label || String(cands.indexOf(c) + 1);
+        ctx.font = 'bold ' + (12 * K) + 'px sans-serif'; const tw = ctx.measureText(t).width;
+        ctx.fillStyle = col; ctx.fillRect(p.x + 4 * K, p.y - 9 * K, tw + 8 * K, 16 * K);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(t, p.x + 8 * K, p.y + 4 * K);
+      }
+    });
+    // sample points (hidden while efficiency points are being chosen, so they do not get in the way)
+    const choosingEff = !!(state.mode && state.mode.type === 'effadd');
+    if (!choosingEff) state.samples.forEach((p, pi) => {
+      if (p.y === null) return;
+      const isSel = pi === state.selIdx;   // selection changes the fill only, never the size
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5 * K, 0, 7); ctx.fillStyle = isSel ? '#c2185b' : '#fff'; ctx.fill(); ctx.strokeStyle = '#c2185b'; ctx.lineWidth = 2.2 * K; ctx.stroke();
+    });
+    // efficiency: the traced curve (curve mode) and the efficiency points
+    if (state.effMode === 'curve' && state.effCurve) {
+      ctx.strokeStyle = EFF_COLOR; ctx.globalAlpha = 0.8; ctx.lineWidth = 2.2 * K; ctx.beginPath();
+      state.effCurve.pts.forEach((p, j) => j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.globalAlpha = 1;
+      const sx = pickAxis('efficiency') ? effSeries() : null;   // the part run down to 0 % on the axis, dashed
+      if (sx && sx.x0 < state.effCurve.pts[0].x - 2) { ctx.setLineDash([5 * K, 4 * K]); ctx.beginPath(); for (let x = sx.x0; x <= state.effCurve.pts[0].x; x += 2) { const y = serY(sx, x); if (y !== null) (x === sx.x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)); } ctx.stroke(); ctx.setLineDash([]); }
+    }
+    effList().forEach((q, i) => {
+      const xy = effXY(q); if (!xy) return;
+      const isSel = i === state.effSelIdx;   // selection changes the fill only, never the size
+      ctx.beginPath(); ctx.arc(xy.x, xy.y, 5 * K, 0, 7); ctx.fillStyle = isSel ? EFF_COLOR : '#fff'; ctx.fill(); ctx.strokeStyle = EFF_COLOR; ctx.lineWidth = 2.2 * K; ctx.stroke();
+      if (state.effMode === 'contours' && isFinite(q.v)) {
+        const t = String(+(+q.v).toFixed(1)) + ' %'; ctx.font = 'bold ' + (12 * K) + 'px sans-serif'; ctx.textAlign = 'left'; ctx.lineWidth = 3 * K; ctx.strokeStyle = '#fff'; ctx.strokeText(t, xy.x + 8 * K, xy.y - 8 * K); ctx.fillStyle = EFF_COLOR; ctx.fillText(t, xy.x + 8 * K, xy.y - 8 * K);
+      }
+    });
+    // the efficiency point being placed: visible from the first click, until its efficiency is entered
+    if (choosingEff && state.effPending) {
+      const xy = effXY(state.effPending);
+      if (xy) {
+        ctx.beginPath(); ctx.arc(xy.x, xy.y, 5 * K, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = EFF_COLOR; ctx.lineWidth = 2.2 * K; ctx.stroke();
+        ctx.beginPath(); ctx.arc(xy.x, xy.y, 1.8 * K, 0, 7); ctx.fillStyle = EFF_COLOR; ctx.fill();
+        const v = state.effPending.v;
+        if (v !== null && isFinite(v)) { const t = String(+(+v).toFixed(1)) + ' %'; ctx.font = 'bold ' + (12 * K) + 'px sans-serif'; ctx.textAlign = 'left'; ctx.lineWidth = 3 * K; ctx.strokeStyle = '#fff'; ctx.strokeText(t, xy.x + 8 * K, xy.y - 8 * K); ctx.fillStyle = EFF_COLOR; ctx.fillText(t, xy.x + 8 * K, xy.y - 8 * K); }
+      }
+    }
+    // pending manual calibration marks
+    if (state.mode && state.mode.type === 'cal') {
+      const marks = state.mode.pts.slice(); if (state.mode.pending !== undefined && state.mode.pending !== null) marks.push({ pix: state.mode.pending });
+      marks.forEach(p => {
+        ctx.strokeStyle = '#ef6c00'; ctx.lineWidth = 2 * K; ctx.beginPath();
+        if (state.mode.orient === 'x') { ctx.moveTo(p.pix, 0); ctx.lineTo(p.pix, state.H); } else { ctx.moveTo(0, p.pix); ctx.lineTo(state.W, p.pix); }
+        ctx.stroke();
+      });
+    }
+  }
+
+  /* ------------------------------------------------------------------ interaction modes */
+  function showModeUI(text, label) {
+    const h = $('#hint'); h.hidden = false; h.innerHTML = '';
+    const s = document.createElement('span'); s.textContent = text; h.appendChild(s);
+    const b = document.createElement('button'); b.textContent = label || 'Cancel'; b.addEventListener('click', () => { if (state.mode && state.mode.type === 'effadd') endEffMode(); else { state.mode = null; hideModeUI(); draw(); } }); h.appendChild(b);
+    syncEffButton();
+  }
+  function syncEffButton() { const b = $('#btnEffAdd'); if (!b) return; const on = !!(state.mode && state.mode.type === 'effadd'); b.textContent = on ? 'Done adding points' : 'Add efficiency points'; b.classList.toggle('done', on); }
+  function hideModeUI() { const h = $('#hint'); if (h) h.hidden = true; const p = $('#valuePop'); if (p) p.hidden = true; state.effPending = null; state.effPendDrag = false; syncEffButton(); }
+
+  const KIND = {
+    flow: { orient: 'x', quantity: 'flow', name: 'flow', units: ['gpm', 'm3/h', 'L/s'] },
+    head: { orient: 'y', quantity: 'head', name: 'head', units: ['ft', 'm'] },
+    eff: { orient: 'y', quantity: 'efficiency', name: 'efficiency', units: ['%'] }
+  };
+  function startCal(kind) {
+    const K = KIND[kind];
+    state.mode = { type: 'cal', kind, orient: K.orient, pts: [] };
+    showModeUI('Click a tick on the ' + K.name + ' axis whose value you know (1 of 2).');
+    draw();
+  }
+  function startSeed(what) {
+    state.mode = { type: 'seed', what };
+    showModeUI(what === 'eff' ? 'Click on the efficiency curve.' : 'Click on the head curve you want to add.');
+  }
+  function startAddPoint() {
+    if (!selectedCurve()) return;
+    state.mode = { type: 'addpoint' };
+    showModeUI('Click along the curve to add a point.');
+  }
+
+  function snapToGrid(v, orient) {
+    const lines = (orient === 'x' ? state.grid.vLines : state.grid.hLines).map(l => l.pos);
+    let best = v, bd = 7 * k();
+    lines.forEach(L => { const d = Math.abs(L - v); if (d < bd) { bd = d; best = L; } });
+    return best;
+  }
+
+  function onCalClick(p) {
+    const m = state.mode;
+    const pix = snapToGrid(m.orient === 'x' ? p.x : p.y, m.orient);
+    m.pending = pix;
+    draw();   // show the line for this tick straight away, not only after Set
+    const K = KIND[m.kind];
+    const pop = $('#valuePop'); pop.hidden = false; pop.innerHTML = '';
+    const lab = document.createElement('label'); lab.textContent = 'Value at this tick (' + (m.pts.length + 1) + ' of 2)'; pop.appendChild(lab);
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.setAttribute('aria-label', 'Tick value'); pop.appendChild(inp);
+    let usel = null;
+    if (m.pts.length === 0) {
+      usel = document.createElement('select'); K.units.forEach(u => { const o = document.createElement('option'); o.value = u; o.textContent = u === 'm3/h' ? 'm³/h' : u; usel.appendChild(o); }); pop.appendChild(usel);
+    }
+    const ok = document.createElement('button'); ok.className = 'btn primary sm'; ok.textContent = 'Set'; pop.appendChild(ok);
+    const wr = $('#wrap').getBoundingClientRect();
+    pop.style.left = Math.max(4, Math.min(p.cx + 10, wr.width - 260)) + 'px'; pop.style.top = Math.max(4, Math.min(p.cy + 10, wr.height - 100)) + 'px';
+    inp.focus();
+    const commit = () => {
+      const v = parseFloat(inp.value); if (!isFinite(v)) { inp.focus(); return; }
+      if (usel) m.unit = usel.value;
+      m.pts.push({ pix: m.pending, val: v }); m.pending = null; pop.hidden = true;
+      if (m.pts.length < 2) { showModeUI('Click a second tick on the ' + K.name + ' axis (2 of 2).'); draw(); return; }
+      const [a, b] = m.pts;
+      if (Math.abs(a.pix - b.pix) < 5 || a.val === b.val) { toast('Pick two different ticks.'); m.pts = []; showModeUI('Click a tick on the ' + K.name + ' axis whose value you know (1 of 2).'); draw(); return; }
+      const slope = (b.val - a.val) / (b.pix - a.pix), icpt = a.val - slope * a.pix;
+      state.axes = state.axes.filter(x => !(x.source === 'manual' && x.quantity === K.quantity));
+      state.axes.push({ id: 'manual-' + K.quantity, quantity: K.quantity, unit: m.unit, orient: K.orient, source: 'manual',
+        cal: { ok: true, fit: { a: slope, b: icpt, rms: 0 }, pix: [a.pix, b.pix], vals: [a.val, b.val], snapped: 0, matched: 2, expected: 2, rmsPx: 0, spacingPx: Math.abs(b.pix - a.pix), spec: { side: 'left' } } });
+      state.mode = null; hideModeUI();
+      if (K.quantity === 'efficiency' && state.effCurve) {   // the traced curve is read through the new % scale (and re-traced from the 0 % mark if possible)
+        const op = effFromOrigin(state.effCurve.click); if (op) { state.effCurve.pts = op; state.effCurve.series = null; }
+        rebuildEffSamples();
+      }
+      renderAll();
+      if (K.quantity === 'flow' && !pickAxis('head')) startCal('head');
+    };
+    ok.addEventListener('click', commit);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { state.mode = null; hideModeUI(); draw(); } });
+  }
+
+  function onSeedClick(p) {
+    const g = state.clean, W = state.W, r = Math.round(9 * k());
+    let best = null, bv = 1e9;
+    for (let y = Math.max(0, Math.round(p.y) - r); y <= Math.min(state.H - 1, Math.round(p.y) + r); y++)
+      for (let x = Math.max(0, Math.round(p.x) - r); x <= Math.min(W - 1, Math.round(p.x) + r); x++) {
+        const v = Math.hypot(x - p.x, y - p.y) * 10 + g[y * W + x] * 0.1;   // the line you clicked on, not a darker one nearby
+        if (g[y * W + x] < 170 && v < bv) { bv = v; best = { x, y }; }
+      }
+    if (!best) { toast('No line found there. Click directly on the curve.'); return; }
+    if (state.mode.what === 'eff') {
+      const ep = traceEffPts(best);
+      if (!ep) { toast('That line could not be followed. Click directly on the efficiency curve.'); return; }
+      state.effCurve = { pts: effFromOrigin(best) || ep, click: best, series: null }; state.effOut.q0 = state.effOut.q1 = null;
+      state.mode = null; hideModeUI(); rebuildEffSamples(); renderAll();
+      if (!pickAxis('efficiency')) { toast('Now click two ticks on the efficiency (%) scale.'); startCal('eff'); }
+      return;
+    }
+    const pts = traceFrom(best, { maxGap: 45, bridgeLeft: true });   // a hand-picked curve may be dashed or interrupted by label boxes
+    if (pts.length < 40) { toast('That line could not be followed far enough.'); return; }
+    const c = { id: state.nextId++, pts, label: '', manual: true };
+    state.curves.push(c);
+    state.mode = null; hideModeUI();
+    if (state.curves.length === 1) state.selectedId = c.id;
+    rebuildSamples(true); renderAll();
+  }
+
+  function onAddPoint(p) {
+    const s = selSeries(); if (!s) return;
+    const y = serY(s, p.x); if (y === null) { toast('Click along the selected curve.'); return; }
+    state.samples.push({ x: p.x, y }); commitEdits(); renderPoints(); draw();
+  }
+
+  /* pointer handling */
+  // nearest point of either set (head points, efficiency points) to the pointer
+  function nearestPoint(p) {
+    let best = null; const lim = 12 * k();
+    state.samples.forEach((q, i) => { if (q.y === null) return; const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < lim && (!best || d < best.d)) best = { set: 'head', i, d }; });
+    effList().forEach((q, i) => { const xy = effXY(q); if (!xy) return; const d = Math.hypot(xy.x - p.x, xy.y - p.y); if (d < lim && (!best || d < best.d)) best = { set: 'eff', i, d }; });
+    return best;
+  }
+  function nearestCurve(p) {
+    let best = null, bd = 10 * k();
+    state.curves.forEach(c => { const y = yAt(c.pts, p.x); if (y !== null && Math.abs(y - p.y) < bd) { bd = Math.abs(y - p.y); best = c; } });
+    return best;
+  }
+  function deselectPoints() { state.selIdx = null; state.effSelIdx = null; }
+  function onDown(e) {
+    const p = evPoint(e);
+    if (state.mode) {
+      if (state.mode.type === 'cal') onCalClick(p); else if (state.mode.type === 'seed') onSeedClick(p); else if (state.mode.type === 'addpoint') onAddPoint(p); else if (state.mode.type === 'effadd') onEffAddClick(p, e);
+      return;
+    }
+    const h = nearestPoint(p);
+    if (h) {
+      if (h.set === 'head') { state.selIdx = h.i; state.effSelIdx = null; state.drag = h.i; } else { state.effSelIdx = h.i; state.selIdx = null; state.effDrag = h.i; }
+      $('#ov').setPointerCapture(e.pointerId); e.preventDefault(); renderPoints(); renderEff(); draw(); updateMagForPoint(); return;
+    }
+    deselectPoints();
+    const c = nearestCurve(p);
+    if (c) selectCurve(c.id);
+    else { renderEff(); draw(); }
+  }
+  function onMove(e) {
+    const p = evPoint(e); lastClient = { x: e.clientX, y: e.clientY }; state.hoverImg = true;
+    if (state.effPendDrag && state.effPending) {   // moving the point that is being placed: it stays on the head curve
+      const sr = selSeries(); if (sr) state.effPending.x = Math.max(sr.x0, Math.min(sr.x1, p.x));
+      draw(); showReadout(p); updateMagForPoint(); return;
+    }
+    if (state.drag !== null && state.drag !== undefined) {
+      const q = state.samples[state.drag]; q.x = p.x; q.y = p.y; commitEdits(); draw(); renderPoints(); showReadout(p); updateMagForPoint(); return;
+    }
+    if (state.effDrag !== null && state.effDrag !== undefined) {
+      const q = effList()[state.effDrag];
+      if (q) { q.x = p.x; if (state.effMode === 'curve') q.y = p.y; }
+      draw(); renderEff(); showReadout(p); updateMagForPoint(); return;
+    }
+    showReadout(p);
+    showMag(p.x, p.y, magCaption(p.x, p.y), p);
+    const pxy = state.effPending ? effXY(state.effPending) : null;
+    $('#ov').style.cursor = state.mode ? ((pxy && Math.hypot(pxy.x - p.x, pxy.y - p.y) < 12 * k()) ? 'grab' : 'crosshair') : (nearestPoint(p) ? 'grab' : 'crosshair');
+  }
+  function onUp(e) {
+    if (state.effPendDrag) { state.effPendDrag = false; try { $('#ov').releasePointerCapture(e.pointerId); } catch (x) { /* ignore */ } const i = $('#valuePop input'); if (i && !$('#valuePop').hidden) i.focus(); draw(); return; }
+    if ((state.drag !== null && state.drag !== undefined) || (state.effDrag !== null && state.effDrag !== undefined)) {
+      state.drag = null; state.effDrag = null; try { $('#ov').releasePointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+      renderPoints(); renderEff(); draw();
+    }
+  }
+  function onDbl(e) {
+    const h = nearestPoint(evPoint(e)); if (!h) return;
+    if (h.set === 'head') { if (state.samples.length > 2) { state.samples.splice(h.i, 1); state.selIdx = null; commitEdits(); renderPoints(); draw(); } }
+    else { effList().splice(h.i, 1); state.effSelIdx = null; renderEff(); draw(); }
+  }
+  function onKey(e) {
+    const t = e.target && e.target.tagName;
+    if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+    if (state.effPending && state.mode && state.mode.type === 'effadd') {
+      if (e.key === 'Escape') { cancelPending(); return; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); nudgePending((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 5 : 1)); return; }
+    }
+    if (e.key === 'Escape' && state.mode) { state.mode = null; hideModeUI(); draw(); return; }   // cancels a click-to-calibrate or point-adding step
+    const step = e.shiftKey ? 5 : 1;
+    if (state.effSelIdx !== null && effList()[state.effSelIdx]) {
+      const q = effList()[state.effSelIdx], curveMode = state.effMode === 'curve';
+      let handled = true;
+      if (e.key === 'ArrowLeft') q.x -= step; else if (e.key === 'ArrowRight') q.x += step;
+      else if (e.key === 'ArrowUp' && curveMode) q.y -= step; else if (e.key === 'ArrowDown' && curveMode) q.y += step;
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { /* efficiency points ride on the head curve: only their position along it changes */ }
+      else if (e.key === 'Delete' || e.key === 'Backspace') { effList().splice(state.effSelIdx, 1); state.effSelIdx = null; }
+      else if (e.key === 'Escape') { state.effSelIdx = null; hideMag(); }
+      else handled = false;
+      if (!handled) return;
+      e.preventDefault(); renderEff(); draw(); updateMagForPoint(); return;
+    }
+    if (state.selIdx === null || !state.samples[state.selIdx]) return;
+    const s = state.samples[state.selIdx];
+    let handled = true;
+    if (e.key === 'ArrowLeft') s.x -= step; else if (e.key === 'ArrowRight') s.x += step;
+    else if (e.key === 'ArrowUp') s.y -= step; else if (e.key === 'ArrowDown') s.y += step;
+    else if (e.key === 'Delete' || e.key === 'Backspace') { if (state.samples.length > 2) { state.samples.splice(state.selIdx, 1); state.selIdx = null; } }
+    else if (e.key === 'Escape') { state.selIdx = null; hideMag(); }
+    else handled = false;
+    if (!handled) return;
+    e.preventDefault(); commitEdits(); renderPoints(); draw(); updateMagForPoint();
+  }
+  function showReadout(p) {
+    const r = $('#readout'), q = pxToFlow(p.x), h = pyToHead(p.y), R = state.region;
+    if (q === null || h === null || !R || p.x < R.x0 - 5 || p.x > state.W || p.y < 0 || p.y > state.H) { r.hidden = true; return; }
+    r.hidden = false;
+    r.textContent = fmt(q, Math.abs(q) >= 100 ? 0 : 1) + ' ' + flowLabel(state.out.flow) + '  ·  ' + fmt(h, 1) + ' ' + state.out.head;
+    const wr = $('#wrap').getBoundingClientRect();
+    r.style.left = Math.min(p.cx + 14, wr.width - 170) + 'px'; r.style.top = Math.max(2, p.cy - 30) + 'px';
+  }
+
+  /* magnifier: zoomed view with crosshairs through the point */
+  const MAG = { Z: 7, S: 196 };
+  function magCaption(x, y) {
+    const q = pxToFlow(x), h = pyToHead(y);
+    if (q === null || h === null) return Math.round(x) + ', ' + Math.round(y) + ' px';
+    return fmt(q, Math.abs(q) >= 100 ? 0 : 1) + ' ' + flowLabel(state.out.flow) + ' · ' + fmt(h, 1) + ' ' + state.out.head;
+  }
+  function showMag(ix, iy, cap, pointer) {
+    const box = $('#magBox'), m = $('#mag'); if (!box || !state.W) return;
+    box.hidden = false;
+    const ctx = m.getContext('2d'), n = MAG.S / MAG.Z, sx = ix - n / 2, sy = iy - n / 2;
+    ctx.imageSmoothingEnabled = false; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, MAG.S, MAG.S);
+    ctx.drawImage($('#cv'), sx, sy, n, n, 0, 0, MAG.S, MAG.S);
+    ctx.drawImage($('#ov'), sx, sy, n, n, 0, 0, MAG.S, MAG.S);
+    const c = MAG.S / 2;
+    ctx.lineWidth = 1; ctx.strokeStyle = '#ff2d55';
+    ctx.beginPath(); ctx.moveTo(0, c); ctx.lineTo(c - 6, c); ctx.moveTo(c + 6, c); ctx.lineTo(MAG.S, c); ctx.moveTo(c, 0); ctx.lineTo(c, c - 6); ctx.moveTo(c, c + 6); ctx.lineTo(c, MAG.S); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(c, c, 3, 0, 7); ctx.stroke(); ctx.strokeStyle = '#ff2d55'; ctx.beginPath(); ctx.arc(c, c, 4, 0, 7); ctx.stroke();
+    $('#magCap').textContent = cap || '';
+    // the magnifier is fixed to the viewport (so it cannot be scrolled away); put it on the side the pointer is not on
+    const rr = box.getBoundingClientRect(), vw = window.innerWidth, narrow = vw <= 980;
+    const rightX = narrow ? vw - 16 - rr.width : vw - 400 - 16 - rr.width, leftX = 16;
+    const hit = (x0) => pointer && pointer.clientX >= x0 - 30 && pointer.clientX <= x0 + rr.width + 30 && pointer.clientY >= 56 && pointer.clientY <= 56 + rr.height + 30;
+    box.classList.toggle('left', hit(rightX) && !hit(leftX));
+  }
+  function hideMag() { const b = $('#magBox'); if (b) b.hidden = true; }
+  // scrolling moves the image under a still pointer: refresh what the magnifier and readout show
+  let lastClient = null;
+  function onScroll() {
+    if (!lastClient || !state.hoverImg || !state.W || state.drag !== null && state.drag !== undefined) return;
+    const r = $('#ov').getBoundingClientRect();
+    if (lastClient.x < r.left || lastClient.x > r.right || lastClient.y < r.top || lastClient.y > r.bottom) { state.hoverImg = false; lastClient = null; hideMag(); $('#readout').hidden = true; return; }
+    const p = evPoint({ clientX: lastClient.x, clientY: lastClient.y });
+    showReadout(p); showMag(p.x, p.y, magCaption(p.x, p.y), p);
+  }
+  function updateMagForPoint() {
+    const dragging = (state.drag !== null && state.drag !== undefined) || (state.effDrag !== null && state.effDrag !== undefined);
+    if (!state.hoverImg && !dragging) { hideMag(); return; }   // only while the cursor is over the image
+    if (state.effPending && state.mode && state.mode.type === 'effadd') {
+      const xy = effXY(state.effPending), f = xy ? pxToFlow(xy.x) : null;
+      if (!state.hoverImg && !state.effPendDrag) { hideMag(); return; }
+      if (xy) { showMag(xy.x, xy.y, 'New efficiency point' + (f !== null ? ': ' + fmt(f, Math.abs(f) >= 100 ? 0 : 1) + ' ' + flowLabel(state.out.flow) : ''), null); return; }
+    }
+    let pt = null, name = '';
+    const hi = state.drag !== null && state.drag !== undefined ? state.drag : state.selIdx;
+    const ei = state.effDrag !== null && state.effDrag !== undefined ? state.effDrag : state.effSelIdx;
+    if (ei !== null && ei !== undefined && !(state.drag !== null && state.drag !== undefined) && effList()[ei]) {
+      const q = effList()[ei], xy = effXY(q);
+      if (xy) { const e = effValue(q), f = pxToFlow(xy.x); pt = xy; name = 'Efficiency point ' + (ei + 1) + ': ' + (f !== null ? fmt(f, Math.abs(f) >= 100 ? 0 : 1) + ' ' + flowLabel(state.out.flow) : '') + (e !== null ? ' · ' + fmt(e, 1) + ' %' : ''); }
+    } else if (hi !== null && hi !== undefined && state.samples[hi] && state.samples[hi].y !== null) {
+      pt = state.samples[hi]; name = 'Point ' + (hi + 1) + ': ' + magCaption(pt.x, pt.y);
+    }
+    if (pt) showMag(pt.x, pt.y, name, null); else hideMag();
+  }
+
+  /* ------------------------------------------------------------------ efficiency */
+  const EFF_COLOR = '#2e7d32';
+
+  // contours: points on the selected head curve, each with the efficiency the user typed ({x, v}); stored with that head curve.
+  // curve:    points on a traced efficiency curve ({x, y}); the efficiency is read from the % axis.
+  function effList(create) {
+    if (state.effMode === 'curve') return state.effCurvePts;
+    const c = selectedCurve(); if (!c) return [];
+    if (!c.effPts && create) c.effPts = [];
+    return c.effPts || [];
+  }
+  function pyToEff(py) { const a = pickAxis('efficiency'); return a ? a.cal.fit.a * py + a.cal.fit.b : null; }
+  function effXY(q) {
+    if (state.effMode === 'curve') return { x: q.x, y: q.y };
+    const s = selSeries(); if (!s) return null;
+    const y = serY(s, q.x); return y === null ? null : { x: q.x, y };
+  }
+  function effValue(q) { if (state.effMode !== 'curve') return q.v; const e = pyToEff(q.y); return e === null ? null : Math.max(0, Math.min(100, e)); }
+  function effRows() {
+    const full = pxToFlow(state.W);
+    return effList().map(q => { let f = pxToFlow(q.x); if (f !== null && full !== null && Math.abs(f) < 0.004 * Math.abs(full)) f = 0; return { q: f, e: effValue(q), pt: q }; }).filter(r => r.q !== null && r.e !== null && isFinite(r.e)).sort((a, b) => a.q - b.q);
+  }
+
+  // an efficiency curve bends strongly, so it is traced without the straightness-based trimming used for head curves
+  function traceEffPts(seed) {
+    const box = bounds();
+    let best = null;
+    for (const s0 of [-1.2, 0, -0.4]) {
+      const R = C.trackCurve(state.clean, state.W, state.H, seed, 1, box, { slope0: s0, hold: 165, maxGap: 25 });
+      const Rt = trimLastGood(trimThickness(C.trimTail(R)));
+      const L = C.trackCurve(state.clean, state.W, state.H, seed, -1, box, { hold: 165, maxGap: 10, slope0: -s0 });
+      const pts = L.slice(0, -1).concat(Rt).filter(p => p.x >= box.x0 && p.x <= box.x1 + 1);
+      if (!best || pts.length > best.length) best = pts;
+    }
+    return best && best.length > Math.max(40, (state.W - state.region.x0) * 0.1) ? best : null;
+  }
+  // Efficiency starts at 0 % at zero flow: trace from there when the 0 % mark is known (calibrated), and keep that trace if it
+  // passes through the point the user clicked. This avoids being led onto a head curve where the two cross.
+  function effFromOrigin(click) {
+    const ex = pickAxis('efficiency'), R = state.region; if (!ex || !R || !click) return null;
+    const y0 = (0 - ex.cal.fit.b) / ex.cal.fit.a;
+    for (const dx of [4, 7, 10, 14]) {
+      const x = Math.round(R.x0) + dx;
+      const seeds = seedsInColumn(state.clean, x, y0 - 14, y0 + 14, 165).sort((a, b) => Math.abs(a.y - y0) - Math.abs(b.y - y0));
+      for (const sd of seeds) {
+        const pts = traceEffPts({ x: sd.x, y: sd.y });
+        if (pts) { const yy = yAt(pts, click.x); if (yy !== null && Math.abs(yy - click.y) < 8) return pts; }
+      }
+    }
+    return null;
+  }
+  function effSeries() {
+    const ec = state.effCurve; if (!ec) return null;
+    const ex = pickAxis('efficiency'), R = state.region, key = ex ? ex.cal.fit.a + ':' + ex.cal.fit.b : '';
+    if (!ec.series || ec.seriesKey !== key) {
+      let pts = ec.pts;
+      // efficiency is 0 % at zero flow: if the trace stops short of the axis (curves overlap near the origin), run it down to the 0 % mark
+      if (ex && R && pts.length > 20 && pts[0].x > R.x0 + 4 && pts[0].x - R.x0 < 170) {
+        const yz = (0 - ex.cal.fit.b) / ex.cal.fit.a, s0 = pts[0], kk = Math.min(15, pts.length - 1);
+        const sl = (pts[kk].y - s0.y) / ((pts[kk].x - s0.x) || 1), d = R.x0 - s0.x, c2 = (yz - s0.y - sl * d) / (d * d);
+        if (isFinite(c2) && Math.abs(yz - s0.y) < 260) {
+          const add = []; for (let x = Math.ceil(R.x0); x < s0.x; x++) add.push({ x, y: s0.y + sl * (x - s0.x) + c2 * (x - s0.x) * (x - s0.x) });
+          pts = add.concat(pts);
+        }
+      }
+      ec.series = seriesOf(pts); ec.seriesKey = key;
+    }
+    return ec.series;
+  }
+  function rebuildEffSamples() {
+    const es = effSeries(); if (!es) { state.effCurvePts = []; return; }
+    const R0 = state.region ? state.region.x0 : es.x0;
+    let x0 = (es.x0 - R0 >= 0 && es.x0 - R0 <= 6) ? R0 : Math.max(es.x0, R0), x1 = es.x1;
+    if (state.effOut.q0 !== null) { const px = flowToPx(state.effOut.q0); if (px !== null) x0 = Math.max(es.x0, Math.min(es.x1, px)); }
+    if (state.effOut.q1 !== null) { const px = flowToPx(state.effOut.q1); if (px !== null) x1 = Math.max(es.x0, Math.min(es.x1, px)); }
+    if (x1 < x0) [x0, x1] = [x1, x0];
+    const n = Math.max(2, Math.min(60, state.effOut.n | 0)), start = state.effCurve.pts[0].x;
+    state.effCurvePts = [];
+    for (let i = 0; i < n; i++) {
+      const x = x0 + (x1 - x0) * i / (n - 1); let y = serY(es, x);
+      if (y !== null && x >= start) y = snapToInk(x, y);
+      if (y !== null) state.effCurvePts.push({ x, y });
+    }
+    state.effSelIdx = null;
+  }
+
+  // a curve through the entered points: polynomial least squares, or monotone through the points
+  function effFit(rows, method) {
+    const n = rows.length; if (n < 2) return null;
+    let m = method;
+    if (m === 'auto') m = n >= 5 ? 'cubic' : (n >= 3 ? 'quad' : 'through');
+    if (m === 'cubic' && n < 4) m = n >= 3 ? 'quad' : 'through';
+    if (m === 'quad' && n < 3) m = 'through';
+    if (m === 'through') {
+      const xs = [], ys = []; rows.forEach(r => { if (!xs.length || r.q - xs[xs.length - 1] > 1e-9) { xs.push(r.q); ys.push(r.e); } });
+      if (xs.length < 2) return null;
+      const f = pchip(xs, ys); return { method: m, fn: q => f(q), rms: 0 };
+    }
+    const deg = m === 'cubic' ? 3 : 2, qa = rows[0].q, qb = rows[n - 1].q, mid = (qa + qb) / 2, half = (qb - qa) / 2 || 1;
+    const us = rows.map(r => (r.q - mid) / half), f = C.polyFit(us, rows.map(r => r.e), deg);
+    if (!f) return null;
+    let ss = 0; rows.forEach((r, i) => { const e = f(us[i]) - r.e; ss += e * e; });
+    return { method: m, fn: q => f((q - mid) / half), rms: Math.sqrt(ss / n) };
+  }
+  function effOutputRows() {
+    const rows = effRows(), plain = rows.map(r => ({ q: r.q, e: r.e }));
+    if (state.effMode === 'curve' || state.effOut.output === 'entered' || rows.length < 2) return { rows: plain, fit: null };
+    const fit = effFit(rows, state.effOut.method); if (!fit) return { rows: plain, fit: null };
+    const qa = rows[0].q, qb = rows[rows.length - 1].q;
+    let q0 = state.effOut.q0 !== null ? state.effOut.q0 : qa, q1 = state.effOut.q1 !== null ? state.effOut.q1 : qb;
+    if (q1 < q0) [q0, q1] = [q1, q0];
+    const n = Math.max(2, Math.min(60, state.effOut.n | 0)), out = [];
+    for (let i = 0; i < n; i++) { const q = q0 + (q1 - q0) * i / (n - 1); out.push({ q, e: fit.fn(q) }); }
+    return { rows: out, fit, q0, q1, outside: q0 < qa - 1e-9 || q1 > qb + 1e-9 };
+  }
+
+  function askValue(p, label, onOk) {
+    const pop = $('#valuePop'); pop.hidden = false; pop.innerHTML = '';
+    const lab = document.createElement('label'); lab.textContent = label; pop.appendChild(lab);
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.setAttribute('aria-label', label); pop.appendChild(inp);
+    const ok = document.createElement('button'); ok.className = 'btn primary sm'; ok.textContent = 'Add'; pop.appendChild(ok);
+    const wr = $('#wrap').getBoundingClientRect();
+    pop.style.left = Math.max(4, Math.min(p.cx + 10, wr.width - 260)) + 'px'; pop.style.top = Math.max(4, Math.min(p.cy + 10, wr.height - 100)) + 'px';
+    inp.focus();
+    const commit = () => { const v = parseFloat(inp.value); if (!isFinite(v)) { inp.focus(); return; } pop.hidden = true; onOk(v); };
+    ok.addEventListener('click', commit);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') pop.hidden = true; });
+  }
+  function startEffAdd() {
+    if (!selectedCurve()) { toast('Choose a head curve in step 3 first.'); return; }
+    if (!pickAxis('flow')) { toast('Calibrate the flow axis first.'); startCal('flow'); return; }
+    state.mode = { type: 'effadd' }; state.effPending = null; state.selIdx = null;
+    showModeUI("Click the head curve where it crosses an efficiency line. Drag the point (or press the left and right arrow keys) to place it exactly, type that line's efficiency, then Add.", 'Done');
+    draw();
+  }
+  // where an efficiency line crosses the head curve near the click: the line is seen above and below the curve, the crossing is between
+  function refineCrossing(x, s) {
+    const g = state.clean, W = state.W, H = state.H, R = 15;
+    const spot = dy => {
+      const vals = [];
+      for (let xq = Math.round(x - R); xq <= Math.round(x + R); xq++) { const yy = serY(s, xq); if (yy === null) { vals.push(255); continue; } const y = Math.round(yy + dy); vals.push(y >= 0 && y < H && xq >= 0 && xq < W ? g[y * W + xq] : 255); }
+      let best = null, st = -1;
+      for (let i = 0; i <= vals.length; i++) { const on = i < vals.length && vals[i] < 165; if (on && st < 0) st = i; if (!on && st >= 0) { const c = Math.round(x - R) + (st + i - 1) / 2; if (best === null || Math.abs(c - x) < Math.abs(best - x)) best = c; st = -1; } }
+      return best;
+    };
+    const a = spot(-8), b = spot(8);
+    if (a !== null && b !== null && Math.abs(a - b) <= 30) return (a + b) / 2;
+    return x;
+  }
+  function onEffAddClick(p, e) {
+    const s = selSeries(); if (!s) return;
+    const pxy = state.effPending ? effXY(state.effPending) : null;
+    if (pxy && Math.hypot(pxy.x - p.x, pxy.y - p.y) < 12 * k()) {   // pick up the point that was just placed and move it
+      state.effPendDrag = true; if (e) { try { $('#ov').setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } e.preventDefault(); } return;
+    }
+    const yc = serY(s, p.x);
+    if (yc === null || Math.abs(yc - p.y) > 30 * k()) { toast('Click on the selected head curve.'); return; }
+    const x = refineCrossing(p.x, s);
+    if (state.effPending) { state.effPending.x = x; positionEffPop(p); const i = $('#valuePop input'); if (i) i.focus(); }
+    else { state.effPending = { x, v: null }; askEffValue(p); }
+    draw(); updateMagForPoint();
+  }
+  function positionEffPop(p) {
+    const pop = $('#valuePop'), wr = $('#wrap').getBoundingClientRect();
+    pop.style.left = Math.max(4, Math.min(p.cx + 10, wr.width - 260)) + 'px'; pop.style.top = Math.max(4, Math.min(p.cy + 10, wr.height - 120)) + 'px';
+  }
+  function nudgePending(dx) {
+    const q = state.effPending, s = selSeries(); if (!q || !s) return;
+    q.x = Math.max(s.x0, Math.min(s.x1, q.x + dx)); draw(); updateMagForPoint();
+  }
+  function commitPending() {
+    const q = state.effPending; if (!q || q.v === null || !isFinite(q.v)) return false;
+    const list = effList(true); list.push({ x: q.x, v: q.v }); state.effSelIdx = list.length - 1; state.selIdx = null;
+    state.effPending = null; state.effPendDrag = false; $('#valuePop').hidden = true;
+    renderEff(); draw(); updateMagForPoint(); return true;
+  }
+  function cancelPending() { state.effPending = null; state.effPendDrag = false; $('#valuePop').hidden = true; draw(); updateMagForPoint(); }
+  function endEffMode() { if (state.effPending && !commitPending()) cancelPending(); state.mode = null; hideModeUI(); draw(); }
+  function askEffValue(p) {
+    const pop = $('#valuePop'); pop.hidden = false; pop.innerHTML = '';
+    const lab = document.createElement('label'); lab.textContent = 'Efficiency of the line here (%)'; pop.appendChild(lab);
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.setAttribute('aria-label', 'Efficiency (%)'); pop.appendChild(inp);
+    const ok = document.createElement('button'); ok.className = 'btn primary sm'; ok.textContent = 'Add'; pop.appendChild(ok);
+    const hint = document.createElement('label'); hint.textContent = 'Drag the point or press the left and right arrow keys to move it along the curve.'; pop.appendChild(hint);
+    positionEffPop(p); inp.focus();
+    inp.addEventListener('input', () => { const v = parseFloat(inp.value); if (state.effPending) state.effPending.v = isFinite(v) ? v : null; draw(); });
+    const commit = () => { if (state.effPending) { const v = parseFloat(inp.value); state.effPending.v = isFinite(v) ? v : null; } if (!commitPending()) inp.focus(); };
+    ok.addEventListener('click', commit);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') commit();
+      else if (e.key === 'Escape') cancelPending();
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); nudgePending((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 5 : 1)); }
+    });
+  }
+
+  function tsvEff(headers) {
+    const out = effOutputRows().rows, lines = [];
+    const dec = e => String(+(e / 100).toFixed(4));   // 50 % exports as 0.5
+    if (headers) lines.push(['Flow (' + flowLabel(state.out.flow) + ')', 'Hydraulic efficiency (decimal)'].join('\t'));
+    out.forEach(r => lines.push([fmt(r.q, 1), dec(r.e)].join('\t')));
+    return lines.join('\n');
+  }
+
+  function drawEffPlot(entered, out, fit) {
+    const cv = $('#effPlot'), dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 340, h = 150;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
+    if (!entered.length) { ctx.fillStyle = '#74848f'; ctx.textAlign = 'center'; ctx.fillText('Efficiency against flow will be plotted here.', w / 2, h / 2); return; }
+    const all = entered.concat(out);
+    let qa = Math.min(...all.map(r => r.q)), qb = Math.max(...all.map(r => r.q)), ea = Math.min(...all.map(r => r.e)), eb = Math.max(...all.map(r => r.e));
+    if (qb - qa < 1e-9) { qa -= 1; qb += 1; } if (eb - ea < 1) { ea -= 1; eb += 1; }
+    const padE = (eb - ea) * 0.12; ea -= padE; eb += padE;
+    const L = 38, Rr = 10, T = 8, B = 22, X = q => L + (q - qa) / (qb - qa) * (w - L - Rr), Y = e => h - B - (e - ea) / (eb - ea) * (h - T - B);
+    ctx.strokeStyle = '#cdd7de'; ctx.lineWidth = 1; ctx.strokeRect(L, T, w - L - Rr, h - T - B);
+    ctx.fillStyle = '#4a5b68'; ctx.textAlign = 'right';
+    for (let i = 0; i <= 3; i++) { const e = ea + (eb - ea) * i / 3; ctx.fillText(e.toFixed(0), L - 4, Y(e)); ctx.beginPath(); ctx.moveTo(L, Y(e)); ctx.lineTo(w - Rr, Y(e)); ctx.strokeStyle = '#eef2f5'; ctx.stroke(); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let i = 0; i <= 3; i++) { const q = qa + (qb - qa) * i / 3; ctx.fillText(q >= 100 ? q.toFixed(0) : q.toFixed(1), X(q), h - B + 4); }
+    if (fit) { ctx.strokeStyle = EFF_COLOR; ctx.globalAlpha = 0.55; ctx.lineWidth = 2; ctx.beginPath(); for (let i = 0; i <= 80; i++) { const q = qa + (qb - qa) * i / 80, e = fit.fn(q); i ? ctx.lineTo(X(q), Y(e)) : ctx.moveTo(X(q), Y(e)); } ctx.stroke(); ctx.globalAlpha = 1; }
+    out.forEach(r => { if (fit) { ctx.fillStyle = EFF_COLOR; ctx.fillRect(X(r.q) - 2, Y(r.e) - 2, 4, 4); } });
+    entered.forEach(r => { ctx.beginPath(); ctx.arc(X(r.q), Y(r.e), 4, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = EFF_COLOR; ctx.lineWidth = 2; ctx.stroke(); });
+  }
+
+  function renderEff() {
+    const sec = $('#stepEff');
+    if (!state.curves.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    const contours = state.effMode === 'contours', c = selectedCurve(), ax = pickAxis('efficiency');
+    document.querySelector('input[name=effmode][value=' + state.effMode + ']').checked = true;
+    $('#panelContours').hidden = !contours; $('#panelCurve').hidden = contours;
+    const list = effList();
+    if (contours) {
+      $('#btnEffAdd').disabled = !c;
+      $('#effCurveName').textContent = c ? (c.label || 'Curve ' + (headCandidates().indexOf(c) + 1)) : 'none selected yet';
+      $('#thEQ').textContent = 'Flow (' + flowLabel(state.out.flow) + ')';
+      const tb = $('#effPtsBody'); tb.innerHTML = '';
+      const sel = state.effSelIdx !== null ? list[state.effSelIdx] : null;
+      effRows().forEach((r, i) => {
+        const tr = document.createElement('tr'); if (r.pt === sel) tr.className = 'sel';
+        const t1 = document.createElement('td'); t1.textContent = String(i + 1);
+        const t2 = document.createElement('td'); t2.textContent = fmt(r.q, Math.abs(r.q) >= 100 ? 0 : 1);
+        const t3 = document.createElement('td'); const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.value = r.pt.v; inp.setAttribute('aria-label', 'Efficiency of point ' + (i + 1));
+        inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (isFinite(v)) { r.pt.v = v; renderEffOutput(); draw(); } });
+        t3.appendChild(inp);
+        const t4 = document.createElement('td'); const del = document.createElement('button'); del.className = 'btn sm'; del.textContent = '✕'; del.title = 'Remove this point'; del.setAttribute('aria-label', 'Remove point ' + (i + 1));
+        del.addEventListener('click', () => { list.splice(list.indexOf(r.pt), 1); state.effSelIdx = null; renderEff(); draw(); });
+        t4.appendChild(del);
+        tr.addEventListener('click', e => { if (e.target === inp || e.target === del) return; state.effSelIdx = list.indexOf(r.pt); state.selIdx = null; renderEff(); draw(); });
+        tr.append(t1, t2, t3, t4); tb.appendChild(tr);
+      });
+      $('#effNone').hidden = effRows().length > 0;
+    } else {
+      const trace = state.effCurve ? 'Curve traced.' : 'Not traced yet.';
+      const eul = $('#effAxisCheck'); eul.innerHTML = ''; eul.appendChild(axisCheck('efficiency', 'Efficiency axis', 'eff'));   // yellow until calibrated, then green, like the axes in step 2
+      $('#effCurveStatus').textContent = trace;
+    }
+    $('#effOutput').value = state.effOut.output; $('#effMethod').value = state.effOut.method;
+    renderEffOutput();
+  }
+
+  function renderEffOutput() {
+    const contours = state.effMode === 'contours', o = effOutputRows(), fitted = contours && state.effOut.output === 'fit' && !!o.fit;
+    // controls that apply
+    $('#effOutputWrap').hidden = !contours;
+    $('#effMethodWrap').hidden = !(contours && state.effOut.output === 'fit');
+    const showN = !contours || state.effOut.output === 'fit';
+    $('#effNWrap').hidden = !showN; $('#effQ0Wrap').hidden = !showN; $('#effQ1Wrap').hidden = !showN;
+    if (showN) {
+      $('#effN').value = state.effOut.n;
+      if (contours) { $('#effQ0').value = o.q0 !== undefined ? fmt(o.q0, 1) : ''; $('#effQ1').value = o.q1 !== undefined ? fmt(o.q1, 1) : ''; }
+      else { const r = effRows(); $('#effQ0').value = r.length ? fmt(r[0].q, 1) : ''; $('#effQ1').value = r.length ? fmt(r[r.length - 1].q, 1) : ''; }
+    }
+    $('#thXQ').textContent = 'Flow (' + flowLabel(state.out.flow) + ')';
+    const tb = $('#effOutBody'); tb.innerHTML = '';
+    o.rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      [String(i + 1), fmt(r.q, Math.abs(r.q) >= 100 ? 0 : 1), fmt(r.e, 1)].forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    let note = '';
+    if (contours && state.effOut.output === 'fit') {
+      if (!o.fit) note = 'Enter at least two points to fit a curve.';
+      else {
+        const nm = { cubic: 'cubic', quad: 'quadratic', through: 'smooth curve through the points' }[o.fit.method];
+        note = 'Fit: ' + nm + (o.fit.method !== 'through' ? ' (RMS error ' + o.fit.rms.toFixed(2) + ' % efficiency)' : '') + '.' + (o.outside ? ' Flows beyond your first and last point are extrapolated.' : '');
+        if (o.rows.some(r => r.e > 100 || r.e < 0)) note += ' Some fitted values are outside 0 to 100 %.';
+      }
+    } else if (!contours && !pickAxis('efficiency')) note = 'Calibrate the efficiency axis to read values.';
+    $('#effNote').textContent = note;
+    $('#effExportCount').textContent = o.rows.length ? o.rows.length + (o.rows.length === 1 ? ' row' : ' rows') : '';
+    $('#btnEffCopy').disabled = $('#btnEffCsv').disabled = !o.rows.length;
+    drawEffPlot(effRows().map(r => ({ q: r.q, e: r.e })), fitted || (contours && state.effOut.output === 'fit') ? o.rows : [], o.fit);
+  }
+
+  /* ------------------------------------------------------------------ wiring */
+  function init() {
+    const drop = $('#drop'), fileIn = $('#fileIn');
+    $('#btnChoose').addEventListener('click', () => fileIn.click());
+    $('#btnReplace').addEventListener('click', () => fileIn.click());
+    fileIn.addEventListener('change', () => { if (fileIn.files[0]) loadFile(fileIn.files[0]); fileIn.value = ''; });
+    ['dragenter', 'dragover'].forEach(ev => document.body.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => document.body.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    document.body.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) loadFile(f); });
+    window.addEventListener('paste', e => {
+      const cd = e.clipboardData; if (!cd) return;
+      let f = null;
+      const it = Array.from(cd.items || []).find(i => i.kind === 'file' && i.type.indexOf('image') === 0);
+      if (it) f = it.getAsFile();
+      if (!f) f = Array.from(cd.files || []).find(x => x.type.indexOf('image') === 0) || null;
+      if (f) { e.preventDefault(); loadFile(f); }
+      else toast('There is no image on the clipboard. Copy the picture itself, not a file.');
+    });
+    const pasteBtn = $('#btnPaste');
+    if (pasteBtn) pasteBtn.addEventListener('click', async () => {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) { const t = item.types.find(x => x.indexOf('image/') === 0); if (t) { const blob = await item.getType(t); loadFile(new File([blob], 'pasted image', { type: t })); return; } }
+        toast('There is no image on the clipboard.');
+      } catch (err) { toast('The browser blocked clipboard access. Click the page and press Ctrl+V, or drop the file instead.'); }
+    });
+
+    $('#btnCalFlow').addEventListener('click', () => startCal('flow'));
+    $('#btnCalHead').addEventListener('click', () => startCal('head'));
+    $('#optCal').addEventListener('change', draw);
+
+    ['pointerdown'].forEach(ev => $('#ov').addEventListener(ev, onDown));
+    $('#ov').addEventListener('mousedown', e => { if (state.mode) e.preventDefault(); });   // keep the value box focused while clicking on the chart
+    $('#ov').addEventListener('pointermove', onMove);
+    $('#ov').addEventListener('pointerup', onUp);
+    $('#ov').addEventListener('pointerleave', () => { state.hoverImg = false; lastClient = null; $('#readout').hidden = true; if (state.drag === null || state.drag === undefined) hideMag(); });
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    $('#ov').addEventListener('dblclick', onDbl);
+
+    const reSample = () => { rebuildSamples(false); renderPoints(); draw(); };
+    $('#outN').addEventListener('change', () => { state.out.n = Math.max(2, Math.min(60, parseInt($('#outN').value, 10) || 10)); reSample(); });
+    $('#outQ0').addEventListener('change', () => { const v = parseFloat($('#outQ0').value); state.out.q0 = isFinite(v) ? v : null; reSample(); });
+    $('#outQ1').addEventListener('change', () => { const v = parseFloat($('#outQ1').value); state.out.q1 = isFinite(v) ? v : null; reSample(); });
+    $('#outFlowUnit').addEventListener('change', () => { state.out.flow = $('#outFlowUnit').value; state.out.q0 = state.out.q1 = null; state.effOut.q0 = state.effOut.q1 = null; reSample(); renderCurves(); if (state.effCurve) rebuildEffSamples(); renderEff(); draw(); });
+    $('#outHeadUnit').addEventListener('change', () => { state.out.head = $('#outHeadUnit').value; renderPoints(); });
+    $('#btnAddPoint').addEventListener('click', startAddPoint);
+    $('#btnResetCurve').addEventListener('click', resetCurveEdits);
+    $('#btnCopy').addEventListener('click', copyExcel);
+    $('#btnCsv').addEventListener('click', () => downloadCsv());
+    // efficiency
+    document.querySelectorAll('input[name=effmode]').forEach(r => r.addEventListener('change', () => {
+      state.effMode = r.value; deselectPoints(); if (state.mode && state.mode.type === 'effadd') { state.mode = null; hideModeUI(); } renderEff(); draw();
+    }));
+    $('#btnEffAdd').addEventListener('click', () => { if (state.mode && state.mode.type === 'effadd') endEffMode(); else startEffAdd(); });   // the same button starts and finishes adding points
+    ['pointerdown', 'focusin'].forEach(ev => $('#stepPoints').addEventListener(ev, () => { if (state.mode && state.mode.type === 'effadd') endEffMode(); }));   // going back to the head points ends it too
+    $('#btnEffTrace').addEventListener('click', () => startSeed('eff'));
+    $('#effOutput').addEventListener('change', () => { state.effOut.output = $('#effOutput').value; state.effOut.q0 = state.effOut.q1 = null; renderEffOutput(); });
+    $('#effMethod').addEventListener('change', () => { state.effOut.method = $('#effMethod').value; renderEffOutput(); });
+    const effResample = () => { if (state.effMode === 'curve') { rebuildEffSamples(); renderEff(); draw(); } else renderEffOutput(); };
+    $('#effN').addEventListener('change', () => { state.effOut.n = Math.max(2, Math.min(60, parseInt($('#effN').value, 10) || 10)); effResample(); });
+    $('#effQ0').addEventListener('change', () => { const v = parseFloat($('#effQ0').value); state.effOut.q0 = isFinite(v) ? v : null; effResample(); });
+    $('#effQ1').addEventListener('change', () => { const v = parseFloat($('#effQ1').value); state.effOut.q1 = isFinite(v) ? v : null; effResample(); });
+    $('#btnEffCopy').addEventListener('click', () => copyExcel(tsvEff($('#optEffHeaders').checked)));
+    $('#btnEffCsv').addEventListener('click', () => downloadCsv(tsvEff($('#optEffHeaders').checked), '_efficiency'));
+    window.addEventListener('resize', () => { if (!$('#stepEff').hidden) renderEffOutput(); });
+  }
+  init();
+})();
+
+</script>
+</body>
+</html>
