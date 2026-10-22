@@ -950,7 +950,7 @@ table.pts th { white-space: normal; }
     mode: null, drag: null, hover: null, hoverCurve: null,
     out: { flow: 'gpm', head: 'ft', n: 10, q0: null, q1: null },
     // efficiency: points on the selected head curve where the user types the efficiency (contours), or a traced efficiency curve
-    effPending: null, effPendDrag: false, effMode: 'contours', effCurve: null, effCurvePts: [], effSelIdx: null, effDrag: null,
+    effPending: null, effPendDrag: false, effMode: 'contours', effCurve: null, effCurveEdited: false, effCurvePts: [], effSelIdx: null, effDrag: null,
     effOut: { n: 10, q0: null, q1: null, output: 'entered', method: 'auto' }
   };
   window.__pc = { state, C, apply: () => analyze(), runs: p => computeRuns(p), seedRuns, trimThickness, trimLastGood, bounds, effRows: () => effRows(), effOutputRows: () => effOutputRows(), tsvEff: h => tsvEff(h) };
@@ -1014,7 +1014,7 @@ table.pts th { white-space: normal; }
   window.addEventListener('resize', layoutStage);
 
   function resetAnalysis() {
-    Object.assign(state, { desc: null, axes: [], xchecks: [], curves: [], selectedId: null, samples: [], samplesEdited: false, selIdx: null, mode: null, drag: null, effCurve: null, effCurvePts: [], effSelIdx: null, effDrag: null, effPending: null, effPendDrag: false });
+    Object.assign(state, { desc: null, axes: [], xchecks: [], curves: [], selectedId: null, samples: [], samplesEdited: false, selIdx: null, mode: null, drag: null, effCurve: null, effCurveEdited: false, effCurvePts: [], effSelIdx: null, effDrag: null, effPending: null, effPendDrag: false });
     state.out.q0 = state.out.q1 = null; state.effOut.q0 = state.effOut.q1 = null;
     hideModeUI();
   }
@@ -1430,17 +1430,21 @@ table.pts th { white-space: normal; }
   }
 
   // the curve after the user moved points: a smooth line through those points (the traced curve is kept outside their range)
-  function editedSeries(c) {
-    const base = c.series || (c.series = seriesOf(c.pts));
+  // smooth line through the user's points (they define the curve once edited)
+  function editedFit(c) {
     const pts = []; (c.userPts || []).forEach(p => { if (!pts.length || p.x - pts[pts.length - 1].x > 0.75) pts.push(p); });
-    if (pts.length < 2 || !base) return base;
-    const f = pchip(pts.map(p => p.x), pts.map(p => p.y)), xa = Math.ceil(pts[0].x), xb = Math.floor(pts[pts.length - 1].x);
-    const x0 = Math.min(base.x0, xa), x1 = Math.max(base.x1, xb), y = new Float64Array(x1 - x0 + 1);
-    for (let x = x0; x <= x1; x++) {
-      if (x >= xa && x <= xb) y[x - x0] = f(x);
-      else { const v = serY(base, x); y[x - x0] = v !== null ? v : (x < xa ? pts[0].y : pts[pts.length - 1].y); }
-    }
-    return { x0, x1, y };
+    if (pts.length < 2) return null;
+    return { pts, f: pchip(pts.map(p => p.x), pts.map(p => p.y)) };
+  }
+  // the edited curve runs from the first data point to the last one: nothing of the original trace is kept beyond them
+  function editedSeries(c) {
+    const base = c.series || (c.series = seriesOf(c.pts)), fit = editedFit(c);
+    if (!fit || !base) return base;
+    const xa = Math.ceil(fit.pts[0].x), xb = Math.floor(fit.pts[fit.pts.length - 1].x);
+    if (xb <= xa) return base;
+    const y = new Float64Array(xb - xa + 1);
+    for (let x = xa; x <= xb; x++) y[x - xa] = fit.f(x);
+    return { x0: xa, x1: xb, y };
   }
 
   // keep what the user did to the points with the curve, so it is still there after looking at another curve
@@ -1676,7 +1680,7 @@ table.pts th { white-space: normal; }
       ctx.strokeStyle = col; ctx.globalAlpha = sel || hov ? 1 : (state.selectedId === null ? 0.9 : 0.45);
       ctx.lineWidth = (sel || hov ? 3 : 2) * K; ctx.lineJoin = 'round';
       ctx.beginPath();
-      if (c.edited && sel && c.userPts && c.userPts.length >= 2) { const es = c.editSeries || (c.editSeries = editedSeries(c)); for (let x = es.x0; x <= es.x1; x++) x === es.x0 ? ctx.moveTo(x, es.y[0]) : ctx.lineTo(x, es.y[x - es.x0]); }
+      if (c.edited && sel && c.userPts && c.userPts.length >= 2) { const fit = editedFit(c); if (fit) { const u = fit.pts, a0 = u[0], z0 = u[u.length - 1]; ctx.moveTo(a0.x, a0.y); for (let x = Math.ceil(a0.x); x <= Math.floor(z0.x); x++) ctx.lineTo(x, fit.f(x)); ctx.lineTo(z0.x, z0.y); } }
       else c.pts.forEach((p, j) => j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
       ctx.stroke();
       ctx.globalAlpha = 1;
@@ -1698,8 +1702,11 @@ table.pts th { white-space: normal; }
     // efficiency: the traced curve (curve mode) and the efficiency points
     if (state.effMode === 'curve' && state.effCurve) {
       ctx.strokeStyle = EFF_COLOR; ctx.globalAlpha = 0.8; ctx.lineWidth = 2.2 * K; ctx.beginPath();
-      state.effCurve.pts.forEach((p, j) => j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.globalAlpha = 1;
-      const sx = pickAxis('efficiency') ? effSeries() : null;   // the part run down to 0 % on the axis, dashed
+      const efit = state.effCurveEdited ? effEditedFit() : null;
+      if (efit) { const u = efit.pts, a0 = u[0], z0 = u[u.length - 1]; ctx.moveTo(a0.x, a0.y); for (let x = Math.ceil(a0.x); x <= Math.floor(z0.x); x++) ctx.lineTo(x, efit.f(x)); ctx.lineTo(z0.x, z0.y); }
+      else state.effCurve.pts.forEach((p, j) => j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.stroke(); ctx.globalAlpha = 1;
+      const sx = pickAxis('efficiency') && !state.effCurveEdited ? effSeries() : null;   // the part run down to 0 % on the axis, dashed
       if (sx && sx.x0 < state.effCurve.pts[0].x - 2) { ctx.setLineDash([5 * K, 4 * K]); ctx.beginPath(); for (let x = sx.x0; x <= state.effCurve.pts[0].x; x += 2) { const y = serY(sx, x); if (y !== null) (x === sx.x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)); } ctx.stroke(); ctx.setLineDash([]); }
     }
     effList().forEach((q, i) => {
@@ -1799,7 +1806,7 @@ table.pts th { white-space: normal; }
         cal: { ok: true, fit: { a: slope, b: icpt, rms: 0 }, pix: [a.pix, b.pix], vals: [a.val, b.val], snapped: 0, matched: 2, expected: 2, rmsPx: 0, spacingPx: Math.abs(b.pix - a.pix), spec: { side: 'left' } } });
       state.mode = null; hideModeUI();
       if (K.quantity === 'efficiency' && state.effCurve) {   // the traced curve is read through the new % scale (and re-traced from the 0 % mark if possible)
-        const op = effFromOrigin(state.effCurve.click); if (op) { state.effCurve.pts = op; state.effCurve.series = null; }
+        const op = effFromOrigin(state.effCurve.click); if (op) { state.effCurve.pts = op; state.effCurve.series = null; state.effCurveEdited = false; state.effCurve.editSeries = null; }
         rebuildEffSamples();
       }
       renderAll();
@@ -1821,7 +1828,7 @@ table.pts th { white-space: normal; }
     if (state.mode.what === 'eff') {
       const ep = traceEffPts(best);
       if (!ep) { toast('That line could not be followed. Click directly on the efficiency curve.'); return; }
-      state.effCurve = { pts: effFromOrigin(best) || ep, click: best, series: null }; state.effOut.q0 = state.effOut.q1 = null;
+      state.effCurveEdited = false; state.effCurve = { pts: effFromOrigin(best) || ep, click: best, series: null }; state.effOut.q0 = state.effOut.q1 = null;
       state.mode = null; hideModeUI(); rebuildEffSamples(); renderAll();
       if (!pickAxis('efficiency')) { toast('Now click two ticks on the efficiency (%) scale.'); startCal('eff'); }
       return;
@@ -1883,7 +1890,7 @@ table.pts th { white-space: normal; }
     if (state.effDrag !== null && state.effDrag !== undefined) {
       const q = effList()[state.effDrag];
       if (q) { q.x = p.x; if (state.effMode === 'curve') q.y = p.y; }
-      draw(); renderEff(); showReadout(p); updateMagForPoint(); return;
+      markEffEdited(); draw(); renderEff(); showReadout(p); updateMagForPoint(); return;
     }
     showReadout(p);
     showMag(p.x, p.y, magCaption(p.x, p.y), p);
@@ -1900,7 +1907,7 @@ table.pts th { white-space: normal; }
   function onDbl(e) {
     const h = nearestPoint(evPoint(e)); if (!h) return;
     if (h.set === 'head') { if (state.samples.length > 2) { state.samples.splice(h.i, 1); state.selIdx = null; commitEdits(); renderPoints(); draw(); } }
-    else { effList().splice(h.i, 1); state.effSelIdx = null; renderEff(); draw(); }
+    else { effList().splice(h.i, 1); state.effSelIdx = null; markEffEdited(); renderEff(); draw(); }
   }
   function onKey(e) {
     const t = e.target && e.target.tagName;
@@ -1921,7 +1928,7 @@ table.pts th { white-space: normal; }
       else if (e.key === 'Escape') { state.effSelIdx = null; hideMag(); }
       else handled = false;
       if (!handled) return;
-      e.preventDefault(); renderEff(); draw(); updateMagForPoint(); return;
+      e.preventDefault(); if (curveMode && e.key !== 'Escape') markEffEdited(); renderEff(); draw(); updateMagForPoint(); return;
     }
     if (state.selIdx === null || !state.samples[state.selIdx]) return;
     const s = state.samples[state.selIdx];
@@ -2049,8 +2056,18 @@ table.pts th { white-space: normal; }
     }
     return null;
   }
+  // moved efficiency-curve points define the curve from then on: a smooth line from the first to the last point
+  function effEditedFit() {
+    const u = []; state.effCurvePts.slice().sort((a, b) => a.x - b.x).forEach(p => { if (!u.length || p.x - u[u.length - 1].x > 0.75) u.push(p); });
+    return u.length < 2 ? null : { pts: u, f: pchip(u.map(p => p.x), u.map(p => p.y)) };
+  }
+  function markEffEdited() { if (state.effMode === 'curve' && state.effCurve) { state.effCurveEdited = true; state.effCurve.editSeries = null; } }
   function effSeries() {
     const ec = state.effCurve; if (!ec) return null;
+    if (state.effCurveEdited) {
+      if (!ec.editSeries) { const fit = effEditedFit(); if (fit) { const xa = Math.ceil(fit.pts[0].x), xb = Math.floor(fit.pts[fit.pts.length - 1].x); if (xb > xa) { const y = new Float64Array(xb - xa + 1); for (let x = xa; x <= xb; x++) y[x - xa] = fit.f(x); ec.editSeries = { x0: xa, x1: xb, y }; } } }
+      if (ec.editSeries) return ec.editSeries;
+    }
     const ex = pickAxis('efficiency'), R = state.region, key = ex ? ex.cal.fit.a + ':' + ex.cal.fit.b : '';
     if (!ec.series || ec.seriesKey !== key) {
       let pts = ec.pts;
@@ -2078,7 +2095,7 @@ table.pts th { white-space: normal; }
     state.effCurvePts = [];
     for (let i = 0; i < n; i++) {
       const x = x0 + (x1 - x0) * i / (n - 1); let y = serY(es, x);
-      if (y !== null && x >= start) y = snapToInk(x, y);
+      if (y !== null && x >= start && !state.effCurveEdited) y = snapToInk(x, y);
       if (y !== null) state.effCurvePts.push({ x, y });
     }
     state.effSelIdx = null;
