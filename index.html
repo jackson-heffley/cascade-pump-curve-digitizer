@@ -223,9 +223,9 @@ table.pts th { white-space: normal; }
   <section class="stage" id="stage">
     <div class="drop" id="drop">
       <h2>Drop a pump curve here</h2>
-      <p>Drag in a PNG or JPG, paste one from the clipboard, or choose a file. The head curves are traced for you; you set the axes by clicking two ticks on each.</p>
+      <p>Drag in a PNG or JPG, paste one from the clipboard, or choose a file. Calibrate the flow and TDH axes by clicking two ticks on each, and the head curves are traced for you to check and adjust.</p>
       <div class="row" style="justify-content:center"><button class="btn primary" id="btnChoose" type="button">Choose image</button><button class="btn" id="btnPaste" type="button">Paste image</button></div>
-      <span class="formats">Head curves are digitized; efficiency, power and NPSH curves are left alone for now. Several speeds or impeller sizes are fine.</span>
+      <span class="formats" style="max-width:62ch">Digitizes head (TDH) against flow for one or several speeds or impeller sizes, and hydraulic efficiency against flow, either from efficiency lines (click where each one crosses the head curve and type its value) or from a separate efficiency curve. Data copies to Excel or downloads as CSV. Power and NPSH curves are not digitized.</span>
     </div>
     <div id="viewer" hidden>
       <div class="canvasWrap" id="wrap">
